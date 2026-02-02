@@ -17,15 +17,18 @@ export default function Header() {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 border-b border-white/10 bg-black/80 backdrop-blur-xl">
       <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-        {/* Logo Area */}
         <Link href="/" className="flex items-center gap-3 opacity-90 hover:opacity-100 transition-opacity">
-          <div className="w-8 h-8 rounded-lg bg-white/10 overflow-hidden bg-gradient-to-br from-purple-500 to-blue-500">
-             {/* Placeholder for logo until image is available */}
+          <div className="w-8 h-8 rounded-lg overflow-hidden">
+             <img 
+               src="/PromptLabLogo.jpg" 
+               alt="PromptLab Logo" 
+               className="w-full h-full object-cover" 
+             />
           </div>
           <span className="text-lg font-semibold text-white">PromptLab</span>
         </Link>
 
-        {/* Navigation Links */}
+        {/* Nav Links */}
         <div className="flex items-center gap-1 bg-white/5 p-1 rounded-full border border-white/10">
           {links.map((link) => {
             const isActive = pathname === link.href;
@@ -47,7 +50,7 @@ export default function Header() {
           })}
         </div>
         
-        <div className="w-8" /> {/* Spacer for centering */}
+        <div className="w-8" /> {/* centering spacer req */}
       </div>
     </nav>
   );
