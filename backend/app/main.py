@@ -4,11 +4,15 @@ TODO: Configure FastAPI app, add middleware, and include routers
 """
 
 from fastapi import FastAPI
+from app.api.routes import health, evaluation
+
 
 app = FastAPI(
     title="Agentic AI Prompt Refiner",
     version="0.1.0"
 )
+
+app.include_router(health.router, prefix="/api", tags=["health"])
 
 
 @app.get("/")
