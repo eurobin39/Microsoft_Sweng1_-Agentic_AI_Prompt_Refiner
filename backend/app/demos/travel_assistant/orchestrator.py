@@ -12,9 +12,9 @@ def run_travel_assistant(location: str) -> str:
     2. Packing Agent - suggests items based on weather
     3. Composer Agent - combines into a friendly response
     """
-    print("=" * 60)
-    print("Travel Assistant")
-    print("=" * 60)
+    print("=" * 30)
+    print("Travel Assistant Working...")
+    print()
 
     print("\n[1/3] Calling Weather Agent...")
     weather_info = get_weather(location)
@@ -27,11 +27,11 @@ def run_travel_assistant(location: str) -> str:
     print("\n[3/3] Calling Composer Agent...")
     final_response = compose_response(weather_info, packing_suggestions)
 
-    print("\n" + "=" * 60)
+    print("\n" )
     print("Final Response:")
-    print("=" * 60)
+    print()
     print(final_response)
-    print("=" * 60)
+    print("=" * 30)
 
     return final_response
 
