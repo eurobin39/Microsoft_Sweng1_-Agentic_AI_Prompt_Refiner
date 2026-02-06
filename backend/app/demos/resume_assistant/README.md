@@ -11,7 +11,7 @@ A multi-agent system that generates tailored resumes by analyzing user backgroun
     ```bash
     docker-compose up
     ```
-2.  The endpoint will be available at: `http://localhost:8000/api/v1/resume-builder/generate`
+2.  The endpoint will be available at: `http://localhost:8000/docs`
 
 ## Example Usage
 
