@@ -2,6 +2,10 @@
 FastAPI Application Entry Point
 TODO: Configure FastAPI app, add middleware, and include routers
 """
+#ignore next 2 lines, i added these to run locally in terminal as docker is not setup. 
+from dotenv import load_dotenv
+load_dotenv()
+
 
 from fastapi import FastAPI
 from app.api.routes import health, evaluation

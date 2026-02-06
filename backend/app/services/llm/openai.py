@@ -23,7 +23,7 @@ class OpenAIClient(BaseLLM):
         self.client = AsyncAzureOpenAI(
             azure_endpoint=settings.AZURE_OPENAI_ENDPOINT,
             api_key=settings.AZURE_OPENAI_API_KEY,
-            api_version="2024-12-01-preview"
+            api_version="2025-03-01-preview"
         )
 
         self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME
