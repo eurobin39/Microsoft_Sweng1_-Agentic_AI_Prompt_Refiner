@@ -52,7 +52,7 @@ DOC_STYLE: [style if specified, otherwise "google"]"""
                 "content": f"User request: {user_request}"
             }
         ],
-        max_completion_tokens=200
+        max_completion_tokens=2048
     )
     
     # Parse the classification response
