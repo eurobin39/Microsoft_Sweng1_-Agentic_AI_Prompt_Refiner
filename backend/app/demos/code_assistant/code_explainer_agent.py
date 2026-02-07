@@ -45,14 +45,3 @@ def explain_code(code: str, stream: bool = False) -> str:
         # Non-streaming: return complete response
         print(response.choices[0].message.content)
         return response.choices[0].message.content
-
-# Test it
-if __name__ == "__main__":
-    test_code = """
-def fibonacci(n):
-    if n <= 1:
-        return n
-    return fibonacci(n-1) + fibonacci(n-2)
-    """
-    print("================= Streaming Response ================")
-    explain_code(test_code, stream=False)
