@@ -101,8 +101,6 @@ DESTINATION: [extracted destination, e.g. "Paris, France"]"""
         return _compose_final_response(weather_info, packing_suggestions)
 
 
-
-
 def _compose_final_response(weather_info: str, packing_suggestions: str) -> str:
     """
     Composes weather and packing info into a single friendly response.
