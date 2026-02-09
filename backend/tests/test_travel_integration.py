@@ -60,8 +60,10 @@ class TravelHealthChecker:
         Returns:
             True if contains weather-related terms
         """
-        weather_terms = ["temperature", "weather", "rain", "sunny", "cloudy", 
-                        "wind", "°c", "°f", "celsius", "fahrenheit"]
+        weather_terms = ["temperature", "weather", "rain", "sunny", "cloudy",
+                        "wind", "°c", "°f", "celsius", "fahrenheit",
+                        "warm", "cool", "cold", "hot", "degrees", "forecast",
+                        "overcast", "humid", "snow", "clear"]
         response_lower = response.lower()
         return any(term in response_lower for term in weather_terms)
     
@@ -73,8 +75,10 @@ class TravelHealthChecker:
         Returns:
             True if contains packing-related terms
         """
-        packing_terms = ["pack", "bring", "jacket", "umbrella", "clothes", 
-                        "shoes", "layers", "wear", "clothing"]
+        packing_terms = ["pack", "bring", "jacket", "umbrella", "clothes",
+                        "shoes", "layers", "wear", "clothing", "coat",
+                        "sweater", "boots", "sunscreen", "hat", "scarf",
+                        "gloves", "shorts", "sunglasses"]
         response_lower = response.lower()
         return any(term in response_lower for term in packing_terms)
 
