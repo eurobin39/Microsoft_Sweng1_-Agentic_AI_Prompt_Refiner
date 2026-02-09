@@ -7,6 +7,7 @@ import os
 import sys
 import pytest
 import time
+from datetime import datetime
 from typing import Dict, List, Optional
 from dataclasses import dataclass
 
@@ -90,6 +91,7 @@ class TestTravelAssistantIntegration:
     ]
     
     SIMPLE_DESTINATION = "Dublin, Ireland"
+    TEST_DATE = datetime.now().strftime("%Y-%m-%d")
 
     def setup_method(self):
         """Setup before each test"""
@@ -216,9 +218,9 @@ class TestTravelAssistantIntegration:
         
         try:
             start_time = time.time()
-            output = get_weather(self.SIMPLE_DESTINATION)
+            output = get_weather(self.SIMPLE_DESTINATION, self.TEST_DATE)
             duration = time.time() - start_time
-            
+
             # Check if output looks like weather info
             passed = (
                 output is not None and 
@@ -243,7 +245,7 @@ class TestTravelAssistantIntegration:
         
         try:
             # Get weather info first (packing agent needs it)
-            weather_info = get_weather(self.SIMPLE_DESTINATION)
+            weather_info = get_weather(self.SIMPLE_DESTINATION, self.TEST_DATE)
             
             start_time = time.time()
             output = get_packing_suggestions(weather_info)
@@ -519,7 +521,7 @@ def run_health_checks() -> Dict[str, bool]:
     
     # Individual agent checks
     try:
-        weather = get_weather("Dublin, Ireland")
+        weather = get_weather("Dublin, Ireland", datetime.now().strftime("%Y-%m-%d"))
         health_status["weather"] = weather is not None
     except Exception as e:
         print(f"❌ Weather agent health check failed: {e}")
@@ -546,7 +548,7 @@ def run_smoke_tests() -> bool:
     
     try:
         # Test 1: Weather agent
-        get_weather("Dublin, Ireland")
+        get_weather("Dublin, Ireland", datetime.now().strftime("%Y-%m-%d"))
         print("✓ Weather agent test passed")
         
         # Test 2: Packing agent
