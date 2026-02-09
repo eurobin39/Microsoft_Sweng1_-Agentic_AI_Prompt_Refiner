@@ -40,9 +40,12 @@ Classify the request into one of these categories:
 
 Also extract the travel destination from the request.
 
+Also extract the travel date from the request. If no date is mentioned, use today's date.
+
 Respond in this exact format:
 INTENT: [weather|packing|both]
-DESTINATION: [extracted destination, e.g. "Paris, France"]"""
+DESTINATION: [extracted destination, e.g. "Paris, France"]
+DATE: [extracted date in YYYY-MM-DD format]"""
             },
             {
                 "role": "user",
@@ -58,32 +61,39 @@ DESTINATION: [extracted destination, e.g. "Paris, France"]"""
 
     intent = None
     destination = None
+    date = None
 
     for line in lines:
         if line.startswith("INTENT:"):
             intent = line.split(":", 1)[1].strip().lower()
         elif line.startswith("DESTINATION:"):
             destination = line.split(":", 1)[1].strip()
+        elif line.startswith("DATE:"):
+            date = line.split(":", 1)[1].strip()
 
     if not destination:
         return "Sorry, I couldn't work out a destination from your request. Could you try again?"
 
+    if not date:
+        from datetime import datetime
+        date = datetime.now().strftime("%Y-%m-%d")
+
     # Route to appropriate agent(s)
     if intent == "weather":
         print("Routing to Weather Agent...\n")
-        return get_weather(destination)
+        return get_weather(destination, date)
 
     elif intent == "packing":
         print("Routing to Packing Agent...\n")
         # Packing agent needs weather context, so call weather first
-        weather_info = get_weather(destination)
+        weather_info = get_weather(destination, date)
         return get_packing_suggestions(weather_info)
 
     elif intent == "both":
         print("Multiple agents needed. Executing in sequence...\n")
 
         print("[1/2] Calling Weather Agent...")
-        weather_info = get_weather(destination)
+        weather_info = get_weather(destination, date)
         print(f"      Weather: {weather_info}")
 
         print("\n[2/2] Calling Packing Agent...")
@@ -97,7 +107,7 @@ DESTINATION: [extracted destination, e.g. "Paris, France"]"""
     else:
         # Fallback: default to full trip advice
         print("Intent unclear. Defaulting to full trip advice...\n")
-        weather_info = get_weather(destination)
+        weather_info = get_weather(destination, date)
         packing_suggestions = get_packing_suggestions(weather_info)
         return _compose_final_response(weather_info, packing_suggestions)
 
