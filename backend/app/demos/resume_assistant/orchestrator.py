@@ -12,12 +12,6 @@ from .resume_feedback_agent import review_resume
 
 load_dotenv()
 
-client = AzureOpenAI(
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    api_version="2024-12-01-preview"
-)
-
 
 def orchestrator(user_input: str, job_description: str, stream: bool = False) -> str:
     """
@@ -29,6 +23,13 @@ def orchestrator(user_input: str, job_description: str, stream: bool = False) ->
     - write_resume: Generate a tailored resume
     - review_resume: Provide feedback and improvement suggestions
     """
+
+    # Initialize client at function level (lazy loading) to handle missing env vars in CI
+    client = AzureOpenAI(
+        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+        api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+        api_version="2024-12-01-preview"
+    )
 
     # Use LLM to classify the intent
     classification_response = client.chat.completions.create(

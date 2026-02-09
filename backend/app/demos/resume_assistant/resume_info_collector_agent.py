@@ -9,15 +9,16 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-client = AzureOpenAI(
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    api_version="2024-12-01-preview"
-)
-
 
 def collect_info(user_input: str, stream: bool = False) -> str:
     """Takes user conversation input and returns structured JSON with resume information."""
+
+    # Initialize client at function level (lazy loading) to handle missing env vars in CI
+    client = AzureOpenAI(
+        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+        api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+        api_version="2024-12-01-preview"
+    )
 
     response = client.chat.completions.create(
         model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),

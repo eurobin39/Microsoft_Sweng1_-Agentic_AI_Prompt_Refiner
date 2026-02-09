@@ -1,10 +1,8 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from app.demos.resume_assistant.orchestrator import ResumeOrchestrator
+from app.demos.resume_assistant.orchestrator import orchestrator
 
 router = APIRouter()
-
-orchestrator = ResumeOrchestrator()
 
 
 class ResumeRequest(BaseModel):
@@ -18,11 +16,11 @@ async def generate_resume(request: ResumeRequest):
     """
 
     try:
-        result = await orchestrator.run_pipeline(
+        result = orchestrator(
             user_input=request.user_input,
             job_description=request.job_description
         )
-        return result
+        return {"result": result}
     except Exception as e:
         print(f"Error in resume generation: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
