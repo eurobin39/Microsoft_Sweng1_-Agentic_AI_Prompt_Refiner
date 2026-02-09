@@ -1,4 +1,5 @@
 # Orchestrator - Routes user requests to the appropriate travel agent(s)
+#Testing CICD pipeline
 
 import os
 from openai import AzureOpenAI
@@ -27,7 +28,7 @@ def orchestrator(user_request: str, stream: bool = False) -> str:
 
     # Use LLM to classify the intent and extract parameters
     classification_response = client.chat.completions.create(
-        model=os.getenv("AZURE_OPENAI_DEPLOYMENT", ""),
+        model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
         messages=[
             {
                 "role": "system",
