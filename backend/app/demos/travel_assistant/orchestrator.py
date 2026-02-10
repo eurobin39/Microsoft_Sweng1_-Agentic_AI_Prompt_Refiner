@@ -28,7 +28,7 @@ def orchestrator(user_request: str, stream: bool = False) -> str:
 
     # Use LLM to classify the intent and extract parameters
     classification_response = client.chat.completions.create(
-        model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
+        model=os.getenv("AZURE_OPENAI_DEPLOYMENT",""),
         messages=[
             {
                 "role": "system",
