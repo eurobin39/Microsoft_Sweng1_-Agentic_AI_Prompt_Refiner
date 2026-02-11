@@ -9,6 +9,7 @@ simple, deterministic routing using local tools.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from typing import Optional
@@ -17,6 +18,8 @@ from .mock_data import mock_packing_list
 from .weather_api import live_weather
 from .runner import run_sync
 
+
+logger = logging.getLogger("travel_assistant")
 
 _WEATHER_KEYWORDS = (
     "weather", "forecast", "temperature", "rain", "snow", "sunny", "cloudy", "wind"
@@ -97,6 +100,8 @@ def orchestrator(user_request: str, stream: bool = False) -> str:
     # Only use MAF when explicitly enabled. This keeps CI/local tests stable
     # even if Azure env vars are set on the machine.
     if os.getenv("TRAVEL_ASSISTANT_USE_MAF", "").lower() in {"1", "true", "yes"}:
+        logger.info("Orchestrator path: MAF (TRAVEL_ASSISTANT_USE_MAF enabled)")
+        print("[travel_assistant] orchestrator path: MAF (TRAVEL_ASSISTANT_USE_MAF enabled)")
         trace = run_sync(
             user_request=user_request,
             mode="handoff",
@@ -105,6 +110,9 @@ def orchestrator(user_request: str, stream: bool = False) -> str:
             trace_dir="travel_assistant/log/traces",
         )
         return trace.get("final_output") or ""
+
+    logger.info("Orchestrator path: fallback (rules + mock/live tools)")
+    print("[travel_assistant] orchestrator path: fallback (rules + mock/live tools)")
 
     destination = _extract_destination(user_request)
     if not destination:
