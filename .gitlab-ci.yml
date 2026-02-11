@@ -180,12 +180,15 @@ test-travel-assistant:
   tags: ["docker"]
   timeout: 20m
   needs: ["health-check"]
+  variables:
+    TRAVEL_ASSISTANT_USE_MAF: "true"
   before_script:
     - cd backend
     - pip install --upgrade pip
     - pip install -r requirements.txt
     - pip install pytest pytest-cov pytest-timeout pytest-xdist
   script:
+    - echo "TRAVEL_ASSISTANT_USE_MAF=$TRAVEL_ASSISTANT_USE_MAF"
     - |
       pytest tests/test_travel_integration.py \
         -v \
