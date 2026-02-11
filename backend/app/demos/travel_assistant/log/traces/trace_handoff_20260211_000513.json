@@ -1,0 +1,52 @@
+{
+  "timestamp": "2026-02-11T00:05:06.251066",
+  "mode": "handoff",
+  "input": "Find me flights from Dublin to Barcelona",
+  "agents": {
+    "triage_agent": {
+      "instructions": "You are a travel assistant triage agent. Analyse the user's request and route it to the appropriate specialist:\n\n- For weather questions → call handoff_to_weather_agent\n- For packing/luggage questions → call handoff_to_packing_agent\n- For activity/sightseeing questions → call handoff_to_activities_agent\n- For flight/hotel/booking questions → call handoff_to_booking_agent\n\nIf the request covers multiple topics, pick the most relevant specialist first. The specialist can hand off to another if needed.\nBe friendly and brief when responding directly.",
+      "tools_available": [],
+      "tool_calls": [
+        {
+          "tool": "handoff_to_booking_agent",
+          "arguments": "",
+          "result": {
+            "handoff_to": "booking_agent"
+          }
+        }
+      ],
+      "output": "",
+      "duration_ms": null
+    },
+    "booking_agent": {
+      "instructions": "You are a travel booking specialist. Use search_flights and search_hotels to show options with prices and ratings. Highlight best value and premium options. When asked to book, use book_flight or book_hotel and confirm the reference. Always confirm details before booking.",
+      "tools_available": [
+        "search_flights",
+        "search_hotels",
+        "book_flight",
+        "book_hotel"
+      ],
+      "tool_calls": [
+        {
+          "tool": "search_flights",
+          "arguments": "",
+          "result": "{\n  \"origin\": \"Dublin\",\n  \"destination\": \"Barcelona\",\n  \"date\": \"2025-03-01\",\n  \"flights\": [\n    {\n      \"flight_id\": \"FL-1000\",\n      \"airline\": \"KLM\",\n      \"departure\": \"2025-03-01T06:00:00\",\n      \"duration_hours\": 5,\n      \"stops\": 0,\n      \"price_eur\": 277,\n      \"cabin_class\": \"Economy\",\n      \"seats_remaining\": 21\n    },\n    {\n      \"flight_id\": \"FL-1001\",\n      \"airline\": \"Emirates\",\n      \"departure\": \"2025-03-01T10:30:00\",\n      \"duration_hours\": 5,\n      \"stops\": 0,\n      \"price_eur\": 283,\n      \"cabin_class\": \"Economy\",\n      \"seats_remaining\": 15\n    },\n    {\n      \"flight_id\": \"FL-1002\",\n      \"airline\": \"British Airways\",\n      \"departure\": \"2025-03-01T14:00:00\",\n      \"duration_hours\": 5.5,\n      \"stops\": 1,\n      \"price_eur\": 357,\n      \"cabin_class\": \"Economy\",\n      \"seats_remaining\": 4\n    },\n    {\n      \"flight_id\": \"FL-1003\",\n      \"airline\": \"Aer Lingus\",\n      \"departure\": \"2025-03-01T18:30:00\",\n      \"duration_hours\": 5.5,\n      \"stops\": 1,\n      \"price_eur\": 377,\n      \"cabin_class\": \"Economy\",\n      \"seats_remaining\": 29\n    }\n  ]\n}"
+        }
+      ],
+      "output": "Here are **flight options from Dublin to Barcelona** for **1 March 2025**. I’ve highlighted the **best value** and **premium-style** choices to make it easier to compare:\n\n---\n\n### ✈️ Available Flights\n\n**✅ Best Value (Cheapest & Direct)**\n- **KLM – Flight FL-1000**\n- 🕕 Departs **06:00**\n- ⏱ **5 hours**, **Non‑stop**\n- 💺 Economy | 21 seats left  \n- 💶 **€277**\n\n---\n\n**💰 Best Value Alternative**\n- **Emirates – Flight FL-1001**\n- 🕥 Departs **10:30**\n- ⏱ **5 hours**, **Non‑stop**\n- 💺 Economy | 15 seats left  \n- 💶 **€283**\n\n---\n\n**⭐ Premium / Flexible Option**\n- **British Airways – Flight FL-1002**\n- 🕑 Departs **14:00**\n- ⏱ **5.5 hours**, **1 stop**\n- 💺 Economy | Limited availability (4 seats)  \n- 💶 **€357**\n\n---\n\n**🟢 National Carrier Option**\n- **Aer Lingus – Flight FL-1003**\n- 🕡 Departs **18:30**\n- ⏱ **5.5 hours**, **1 stop**\n- 💺 Economy | 29 seats left  \n- 💶 **€377**\n\n---\n\nWould you like me to **book one of these flights**, check **different travel dates**, or look at **hotels in Barcelona** as well?  \nIf booking, just tell me **which flight** and the **passenger name**.",
+      "duration_ms": 5871
+    }
+  },
+  "execution_order": [
+    "triage_agent",
+    "booking_agent"
+  ],
+  "handoffs": [
+    {
+      "from": "triage_agent",
+      "to": "booking_agent"
+    }
+  ],
+  "final_output": "",
+  "duration_ms": 7538
+}
