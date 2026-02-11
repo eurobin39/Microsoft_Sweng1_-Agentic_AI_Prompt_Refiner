@@ -11,5 +11,6 @@ designed for easy swap to real APIs.
 """
 
 from .runner import run_workflow, run_sync, get_chat_client
+from .orchestrator import orchestrator
 
-__all__ = ["run_workflow", "run_sync", "get_chat_client"]
+__all__ = ["run_workflow", "run_sync", "get_chat_client", "orchestrator"]
