@@ -22,7 +22,7 @@ cache:
 # Health Check & API Connection Test -   ensures server starts and environment variables are set correctly before running integration tests
 health-check:
   stage: health-check
-  image: python:3.10
+  image: python:3.13
   tags: ["docker"]
   timeout: 10m
   before_script:
@@ -110,7 +110,7 @@ health-check:
 # Code Assistant Integration Tests
 test-code-assistant:
   stage: test
-  image: python:3.10
+  image: python:3.13
   tags: ["docker"]
   timeout: 20m
   needs: ["health-check"]
@@ -143,7 +143,7 @@ test-code-assistant:
 # Resume Assistant Integration Tests
 test-resume-assistant:
   stage: test
-  image: python:3.10
+  image: python:3.13
   tags: ["docker"]
   timeout: 25m
   needs: ["health-check"]
@@ -176,7 +176,7 @@ test-resume-assistant:
 # Travel Assistant Integration Tests (placeholder - will be implemented later)
 test-travel-assistant:
   stage: test
-  image: python:3.10
+  image: python:3.13
   tags: ["docker"]
   timeout: 20m
   needs: ["health-check"]
@@ -208,7 +208,7 @@ test-travel-assistant:
 # Code Assistant Workflow Integration Tests
 integration-code-assistant:
   stage: integration
-  image: python:3.10
+  image: python:3.13
   tags: ["docker"]
   timeout: 15m
   needs: ["test-code-assistant"]
@@ -238,7 +238,7 @@ integration-code-assistant:
 # Resume Assistant Workflow Integration Tests
 integration-resume-assistant:
   stage: integration
-  image: python:3.10
+  image: python:3.13
   tags: ["docker"]
   timeout: 20m
   needs: ["test-resume-assistant"]
@@ -268,7 +268,7 @@ integration-resume-assistant:
 # Performance Tests - Code Assistant
 performance-code-assistant:
   stage: performance
-  image: python:3.10
+  image: python:3.13
   tags: ["docker"]
   timeout: 10m
   needs: ["test-code-assistant"]
@@ -296,7 +296,7 @@ performance-code-assistant:
 # Performance Tests - Resume Assistant
 performance-resume-assistant:
   stage: performance
-  image: python:3.10
+  image: python:3.13
   tags: ["docker"]
   timeout: 15m
   needs: ["test-resume-assistant"]
@@ -324,7 +324,7 @@ performance-resume-assistant:
 # Error Handling Tests - Code Assistant
 error-handling-code-assistant:
   stage: integration
-  image: python:3.10
+  image: python:3.13
   tags: ["docker"]
   timeout: 10m
   needs: ["test-code-assistant"]
@@ -353,7 +353,7 @@ error-handling-code-assistant:
 # Error Handling Tests - Resume Assistant
 error-handling-resume-assistant:
   stage: integration
-  image: python:3.10
+  image: python:3.13
   tags: ["docker"]
   timeout: 10m
   needs: ["test-resume-assistant"]
@@ -383,7 +383,7 @@ error-handling-resume-assistant:
 # Test Results Report
 report-results:
   stage: report
-  image: python:3.10
+  image: python:3.13
   tags: ["docker"]
   needs:
     - health-check
