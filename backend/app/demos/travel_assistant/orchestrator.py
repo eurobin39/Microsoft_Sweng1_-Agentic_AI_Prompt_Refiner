@@ -85,6 +85,15 @@ def _format_weather_summary(weather_json: str) -> str:
 
     return f"Weather in {destination}: {condition}."
 
+def _is_weak_output(text: str) -> bool:
+    if not text:
+        return True
+    if len(text.strip()) < 12:
+        return True
+    lower = text.lower()
+    has_weather = any(k in lower for k in _WEATHER_KEYWORDS)
+    has_packing = any(k in lower for k in _PACKING_KEYWORDS)
+    return not (has_weather or has_packing)
 
 def orchestrator(user_request: str, stream: bool = False) -> str:
     """
@@ -109,7 +118,23 @@ def orchestrator(user_request: str, stream: bool = False) -> str:
             log_file=None,
             trace_dir="travel_assistant/log/traces",
         )
-        return trace.get("final_output") or ""
+        output = trace.get("final_output") or ""
+
+        if not output:
+            agents = trace.get("agents", {}) or {}
+            pieces = []
+            for agent in ("weather_agent", "packing_agent", "activities_agent", "booking_agent", "triage_agent"):
+                agent_out = (agents.get(agent) or {}).get("output", "")
+                if agent_out:
+                    pieces.append(agent_out.strip())
+            output = "\n\n".join(pieces).strip()
+
+        if _is_weak_output(output):
+            logger.warning("MAF output weak/empty; using fallback composition")
+            print("[travel_assistant] MAF output weak/empty; using fallback composition")
+            # Fall through to fallback path
+        else:
+            return output
 
     logger.info("Orchestrator path: fallback (rules + mock/live tools)")
     print("[travel_assistant] orchestrator path: fallback (rules + mock/live tools)")

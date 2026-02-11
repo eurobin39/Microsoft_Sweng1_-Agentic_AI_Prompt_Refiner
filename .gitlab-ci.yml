@@ -191,7 +191,7 @@ test-travel-assistant:
     - echo "TRAVEL_ASSISTANT_USE_MAF=$TRAVEL_ASSISTANT_USE_MAF"
     - |
       pytest tests/test_travel_integration.py \
-        -v \
+        -v -s \
         --cov=app.demos.travel_assistant \
         --cov-report=xml \
         --cov-report=html \
