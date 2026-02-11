@@ -1,34 +1,22 @@
-# Packing Agent - Gets weather context, suggests packing items
-import os
-from dotenv import load_dotenv
-from openai import AzureOpenAI
+"""
+Legacy compatibility wrapper for travel packing agent.
 
-load_dotenv(dotenv_path=".env")
+This module exists to keep older integration tests working after the
+Microsoft Agent Framework migration. It provides a simple, direct
+function for packing suggestions without requiring LLM setup.
+"""
 
-client = AzureOpenAI(
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
-    api_version="2024-12-01-preview",
-)
+from __future__ import annotations
 
-DEPLOYMENT = os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
+from .mock_data import mock_packing_list
 
-def get_packing_suggestions(weather_info: str) -> str:
-    resp = client.chat.completions.create(
-        model=DEPLOYMENT,
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a travel packing assistant. Reply with 6-10 items, comma-separated."
-            },
-            {
-                "role": "user",
-                "content": f"Weather: {weather_info}\nPacking items only."
-            },
-        ],
-        max_completion_tokens=256,
-    )
-    return (resp.choices[0].message.content or "").strip()
 
-if __name__ == "__main__":
-    print(get_packing_suggestions("Galway: 11°C, light rain, windy"))
+def get_packing_suggestions(weather_info: str, trip_type: str = "general") -> str:
+    """
+    Return packing suggestions based on weather info.
+
+    Args:
+        weather_info: Weather summary or JSON string.
+        trip_type: Trip category (general/business/hiking/beach/city).
+    """
+    return mock_packing_list(weather_info, trip_type)

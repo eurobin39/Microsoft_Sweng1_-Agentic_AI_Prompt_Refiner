@@ -1,51 +1,105 @@
-# Demo - Interactive demo to showcase the travel assistant workflow
+"""
+Travel Assistant Demo — Microsoft Agent Framework
+
+Demonstrates three workflow patterns with structured tracing:
+  1. HANDOFF: Triage agent routes to specialists who hand off between each other
+  2. SEQUENTIAL: Weather → Packing chain (packing needs weather context)
+  3. CONCURRENT: Weather + Activities + Booking agents work in parallel
+
+Each run produces a JSON trace in traces/ for evaluator consumption.
+
+Prerequisites:
+  pip install agent-framework --pre azure-identity python-dotenv
+
+  Environment variables (or .env file):
+    AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+    AZURE_OPENAI_API_KEY=your-key       (or use `az login`)
+    AZURE_OPENAI_DEPLOYMENT=gpt-4o-mini
+"""
 
 import os
 import sys
+import asyncio
 
-# Add the parent directory to Python path to allow imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
-from travel_assistant.orchestrator import orchestrator
+from travel_assistant.runner import run_workflow
 
 
-def print_section_header(title: str):
+def header(title: str) -> None:
     print("\n" + "=" * 80)
-    print(f"  {title}")
+    print(f"  🧳 {title}")
     print("=" * 80 + "\n")
 
 
-def run_demo():
-    print_section_header("TRAVEL ASSISTANT ORCHESTRATOR DEMO")
+async def main() -> None:
+    log_file = "travel_assistant/log/travel_assistant.log"
+    trace_dir = "travel_assistant/log/traces"
 
-    # Test 1: Weather-only request
-    print_section_header("TEST 1: Weather-Only Request")
-    print("User request: 'What's the weather like in Tokyo on 2026-02-15?'\n")
-    result = orchestrator("What's the weather like in Tokyo on 2026-02-15?", True)
-    print(f"\nResult: {result}")
 
-    # Test 2: Packing-only request
-    print_section_header("TEST 2: Packing-Only Request")
-    print("User request: 'What should I pack for a trip to Iceland on 2026-03-01?'\n")
-    result = orchestrator("What should I pack for a trip to Iceland on 2026-03-01?")
-    print(f"\nResult: {result}")
+    header("TRAVEL ASSISTANT — MICROSOFT AGENT FRAMEWORK DEMO")
+    print(f"📝 Event logs: {log_file}")
+    print(f"📄 JSON traces: {trace_dir}/\n")
 
-    # Test 3: Full trip advice (both agents + composition)
-    print_section_header("TEST 3: Full Trip Advice Request")
-    print("User request: 'I'm travelling to Galway, Ireland on 2026-02-16. What's the weather and what should I pack?'\n")
-    result = orchestrator("I'm travelling to Galway, Ireland on 2026-02-16. What's the weather and what should I pack?")
-    print(f"\nResult: {result}")
+    # ─── 1. HANDOFF: Weather-only request ───
+    header("1. HANDOFF — Weather-Only Request")
+    print("User: 'What's the weather like in Tokyo?'\n")
+    await run_workflow(
+        "What's the weather like in Tokyo?",
+        mode="handoff",
+        log_file=log_file,
+        trace_dir=trace_dir,
+    )
 
-    # Test 4: Natural language variation
-    print_section_header("TEST 4: Natural Language Variation")
-    print("User request: 'Help me prepare for my trip to Barcelona on 2026-04-10'\n")
-    result = orchestrator("Help me prepare for my trip to Barcelona on 2026-04-10", True)
-    print(f"\nResult: {result}")
+    # ─── 2. HANDOFF: Booking request ───
+    header("2. HANDOFF — Booking Request")
+    print("User: 'Find me flights from Dublin to Barcelona'\n")
+    await run_workflow(
+        "Find me flights from Dublin to Barcelona",
+        mode="handoff",
+        log_file=log_file,
+        trace_dir=trace_dir,
+    )
 
-    print_section_header("DEMO COMPLETE")
+    # ─── 3. HANDOFF: Multi-topic (triage → weather → packing) ───
+    header("3. HANDOFF — Multi-Topic (Weather → Packing handoff)")
+    print("User: 'What's the weather in Reykjavik and what should I pack for hiking?'\n")
+    await run_workflow(
+        "What's the weather in Reykjavik and what should I pack for hiking?",
+        mode="handoff",
+        log_file=log_file,
+        trace_dir=trace_dir,
+    )
+
+    # ─── 4. SEQUENTIAL: Weather → Packing pipeline ───
+    header("4. SEQUENTIAL — Weather → Packing Pipeline")
+    print("User: 'What should I pack for a beach trip to Bali?'\n")
+    await run_workflow(
+        "What should I pack for a beach trip to Bali?",
+        mode="sequential",
+        log_file=log_file,
+        trace_dir=trace_dir,
+    )
+
+    # ─── 5. CONCURRENT: Full trip overview (all agents in parallel) ───
+    header("5. CONCURRENT — Full Trip Overview (parallel agents)")
+    print("User: 'Tell me everything about travelling to Galway, Ireland'\n")
+    await run_workflow(
+        "Tell me everything about travelling to Galway, Ireland. "
+        "Check the weather, find flights from Dublin, and suggest activities.",
+        mode="concurrent",
+        log_file=log_file,
+        trace_dir=trace_dir,
+    )
+
+    header("DEMO COMPLETE")
+    print(f"📝 Event logs: {log_file}")
+    print(f"📄 JSON traces: {trace_dir}/")
+    print("   Each trace has: input, agent instructions, tool calls, outputs, timing.")
+    print("   Feed these to your evaluator/judge for prompt refinement.\n")
 
 
 if __name__ == "__main__":
-    run_demo()
+    asyncio.run(main())

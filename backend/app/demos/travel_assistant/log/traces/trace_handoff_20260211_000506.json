@@ -1,0 +1,50 @@
+{
+  "timestamp": "2026-02-11T00:04:59.181083",
+  "mode": "handoff",
+  "input": "What's the weather like in Tokyo?",
+  "agents": {
+    "triage_agent": {
+      "instructions": "You are a travel assistant triage agent. Analyse the user's request and route it to the appropriate specialist:\n\n- For weather questions → call handoff_to_weather_agent\n- For packing/luggage questions → call handoff_to_packing_agent\n- For activity/sightseeing questions → call handoff_to_activities_agent\n- For flight/hotel/booking questions → call handoff_to_booking_agent\n\nIf the request covers multiple topics, pick the most relevant specialist first. The specialist can hand off to another if needed.\nBe friendly and brief when responding directly.",
+      "tools_available": [],
+      "tool_calls": [
+        {
+          "tool": "handoff_to_weather_agent",
+          "arguments": "",
+          "result": {
+            "handoff_to": "weather_agent"
+          }
+        }
+      ],
+      "output": "",
+      "duration_ms": null
+    },
+    "weather_agent": {
+      "instructions": "You are a travel weather specialist. Use get_weather for current conditions and get_forecast for multi-day outlooks. Summarise clearly: temperature, conditions, rain chance. Highlight notable day-to-day changes in forecasts. If the user also needs packing advice, call handoff_to_packing_agent. If they need activities, call handoff_to_activities_agent.",
+      "tools_available": [
+        "get_weather",
+        "get_forecast"
+      ],
+      "tool_calls": [
+        {
+          "tool": "get_weather",
+          "arguments": "",
+          "result": "{\n  \"destination\": \"Tokyo, Japan\",\n  \"current\": {\n    \"temperature_c\": 2.5,\n    \"temperature_f\": 36,\n    \"condition\": \"Slight rain\",\n    \"humidity_pct\": 87,\n    \"wind_kph\": 3.3,\n    \"rain_chance_pct\": 75\n  },\n  \"source\": \"open-meteo.com\",\n  \"retrieved_at\": \"2026-02-11T00:05:02.889942\"\n}"
+        }
+      ],
+      "output": "Here’s the **current weather in Tokyo**:\n\n- 🌡️ **Temperature:** **2.5 °C** (36 °F) — quite cold  \n- 🌧️ **Conditions:** **Slight rain**  \n- ☔ **Chance of rain:** **~75%**  \n- 💧 **Humidity:** 87%  \n- 🌬️ **Wind:** Light, around 3 km/h  \n\nOverall, it’s a **cold, damp day**, so a warm coat and an umbrella are a good idea.  \nIf you’d like, I can also share a **multi-day forecast**, **packing tips**, or **weather‑friendly activities** in Tokyo.",
+      "duration_ms": 5367
+    }
+  },
+  "execution_order": [
+    "triage_agent",
+    "weather_agent"
+  ],
+  "handoffs": [
+    {
+      "from": "triage_agent",
+      "to": "weather_agent"
+    }
+  ],
+  "final_output": "",
+  "duration_ms": 7055
+}

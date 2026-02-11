@@ -1,148 +1,166 @@
-# Orchestrator - Routes user requests to the appropriate travel agent(s)
-#Testing CICD pipeline
+"""
+Travel Assistant Orchestrator (compatibility layer).
 
+This wrapper preserves the older orchestrator import path used by CI tests.
+It avoids requiring Azure/OpenAI credentials by default, and falls back to
+simple, deterministic routing using local tools.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
 import os
-from openai import AzureOpenAI
-from dotenv import load_dotenv
-from .travel_weather_agent import get_weather
-from .travel_packing_agent import get_packing_suggestions
+import re
+from typing import Optional
 
-load_dotenv()
+from .mock_data import mock_packing_list
+from .weather_api import live_weather
+from .runner import run_sync
 
-client = AzureOpenAI(
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT", ""),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY", ""),
-    api_version="2024-12-01-preview"
+
+logger = logging.getLogger("travel_assistant")
+
+_WEATHER_KEYWORDS = (
+    "weather", "forecast", "temperature", "rain", "snow", "sunny", "cloudy", "wind"
+)
+_PACKING_KEYWORDS = (
+    "pack", "packing", "bring", "wear", "clothes", "clothing", "luggage", "suitcase"
 )
 
 
+def _extract_destination(text: str) -> Optional[str]:
+    if not text:
+        return None
+
+    match = re.search(
+        r"(?:to|in|for|around|near)\s+([A-Za-z][A-Za-z\s\-',.]*)",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    candidate = match.group(1)
+    candidate = re.split(r"[?.!,]", candidate, maxsplit=1)[0]
+    candidate = re.sub(
+        r"\b(next|tomorrow|today|this|on|at|by|with|and)\b.*$",
+        "",
+        candidate,
+        flags=re.IGNORECASE,
+    ).strip()
+
+    return candidate or None
+
+
+def _wants_weather(text: str) -> bool:
+    text_lower = text.lower()
+    return any(k in text_lower for k in _WEATHER_KEYWORDS)
+
+
+def _wants_packing(text: str) -> bool:
+    text_lower = text.lower()
+    return any(k in text_lower for k in _PACKING_KEYWORDS)
+
+
+def _format_weather_summary(weather_json: str) -> str:
+    try:
+        payload = json.loads(weather_json)
+    except Exception:
+        return weather_json
+
+    current = payload.get("current", {})
+    destination = payload.get("destination", "your destination")
+    temp_c = current.get("temperature_c")
+    temp_f = current.get("temperature_f")
+    condition = current.get("condition", "weather")
+
+    if temp_c is not None and temp_f is not None:
+        return (
+            f"Weather in {destination}: {condition}. "
+            f"Temperature {temp_c}°C / {temp_f}°F."
+        )
+    if temp_c is not None:
+        return f"Weather in {destination}: {condition}. Temperature {temp_c}°C."
+
+    return f"Weather in {destination}: {condition}."
+
+def _is_weak_output(text: str) -> bool:
+    if not text:
+        return True
+    if len(text.strip()) < 12:
+        return True
+    lower = text.lower()
+    has_weather = any(k in lower for k in _WEATHER_KEYWORDS)
+    has_packing = any(k in lower for k in _PACKING_KEYWORDS)
+    return not (has_weather or has_packing)
+
 def orchestrator(user_request: str, stream: bool = False) -> str:
     """
-    Routes user requests to the appropriate specialized travel agent.
+    Route travel requests to weather/packing helpers.
 
-    Analyzes the user's request and determines which agent(s) to invoke:
-    - get_weather: For weather information about a destination
-    - get_packing_suggestions: For packing advice
-    - both: For full trip advice (weather + packing composed into a friendly response)
+    If Azure OpenAI credentials are present, this can run the full
+    Microsoft Agent Framework workflow. Otherwise, it uses a lightweight
+    rules-based fallback suitable for CI.
     """
+    if not user_request or not user_request.strip():
+        return "Please provide a destination and what you need help with."
 
-    # Use LLM to classify the intent and extract parameters
-    classification_response = client.chat.completions.create(
-        model=os.getenv("AZURE_OPENAI_DEPLOYMENT",""),
-        messages=[
-            {
-                "role": "system",
-                "content": """You are a routing assistant that analyzes user requests about travel.
-Classify the request into one of these categories:
-- "weather": User only wants weather information for a destination
-- "packing": User only wants packing suggestions for a destination
-- "both": User wants full trip advice (weather AND packing combined into a friendly response)
+    # Only use MAF when explicitly enabled. This keeps CI/local tests stable
+    # even if Azure env vars are set on the machine.
+    if os.getenv("TRAVEL_ASSISTANT_USE_MAF", "").lower() in {"1", "true", "yes"}:
+        logger.info("Orchestrator path: MAF (TRAVEL_ASSISTANT_USE_MAF enabled)")
+        print("[travel_assistant] orchestrator path: MAF (TRAVEL_ASSISTANT_USE_MAF enabled)")
+        trace = run_sync(
+            user_request=user_request,
+            mode="handoff",
+            stream=stream,
+            log_file=None,
+            trace_dir="travel_assistant/log/traces",
+        )
+        output = trace.get("final_output") or ""
 
-Also extract the travel destination from the request.
+        if not output:
+            agents = trace.get("agents", {}) or {}
+            pieces = []
+            for agent in ("weather_agent", "packing_agent", "activities_agent", "booking_agent", "triage_agent"):
+                agent_out = (agents.get(agent) or {}).get("output", "")
+                if agent_out:
+                    pieces.append(agent_out.strip())
+            output = "\n\n".join(pieces).strip()
 
-Also extract the travel date from the request. If no date is mentioned, use today's date.
+        if _is_weak_output(output):
+            logger.warning("MAF output weak/empty; using fallback composition")
+            print("[travel_assistant] MAF output weak/empty; using fallback composition")
+            # Fall through to fallback path
+        else:
+            return output
 
-Respond in this exact format:
-INTENT: [weather|packing|both]
-DESTINATION: [extracted destination, e.g. "Paris, France"]
-DATE: [extracted date in YYYY-MM-DD format]"""
-            },
-            {
-                "role": "user",
-                "content": f"User request: {user_request}"
-            }
-        ],
-        max_completion_tokens=200
-    )
+    logger.info("Orchestrator path: fallback (rules + mock/live tools)")
+    print("[travel_assistant] orchestrator path: fallback (rules + mock/live tools)")
 
-    # Parse the classification response
-    classification = classification_response.choices[0].message.content or ""
-    lines = classification.strip().split('\n')
-
-    intent = None
-    destination = None
-    date = None
-
-    for line in lines:
-        if line.startswith("INTENT:"):
-            intent = line.split(":", 1)[1].strip().lower()
-        elif line.startswith("DESTINATION:"):
-            destination = line.split(":", 1)[1].strip()
-        elif line.startswith("DATE:"):
-            date = line.split(":", 1)[1].strip()
-
+    destination = _extract_destination(user_request)
     if not destination:
-        return "Sorry, I couldn't work out a destination from your request. Could you try again?"
+        return "Please provide a destination so I can help with weather or packing advice."
 
-    if not date:
-        from datetime import datetime
-        date = datetime.now().strftime("%Y-%m-%d")
+    needs_weather = _wants_weather(user_request)
+    needs_packing = _wants_packing(user_request)
 
-    # Route to appropriate agent(s)
-    if intent == "weather":
-        print("Routing to Weather Agent...\n")
-        return get_weather(destination, date)
+    # Default behavior for ambiguous queries: provide both.
+    if not needs_weather and not needs_packing:
+        needs_weather = True
+        needs_packing = True
 
-    elif intent == "packing":
-        print("Routing to Packing Agent...\n")
-        # Packing agent needs weather context, so call weather first
-        weather_info = get_weather(destination, date)
-        return get_packing_suggestions(weather_info)
+    outputs: list[str] = []
+    weather_json = ""
 
-    elif intent == "both":
-        print("Multiple agents needed. Executing in sequence...\n")
+    if needs_weather:
+        weather_json = live_weather(destination)
+        outputs.append(_format_weather_summary(weather_json))
 
-        print("[1/2] Calling Weather Agent...")
-        weather_info = get_weather(destination, date)
-        print(f"      Weather: {weather_info}")
+    if needs_packing:
+        summary = weather_json if weather_json else destination
+        packing_json = mock_packing_list(summary, "general")
+        outputs.append("Packing suggestions:\n" + packing_json)
 
-        print("\n[2/2] Calling Packing Agent...")
-        packing_suggestions = get_packing_suggestions(weather_info)
-        print(f"      Packing: {packing_suggestions}")
-
-        # Compose a final friendly response from both agent outputs
-        print("\nComposing final response...")
-        return _compose_final_response(weather_info, packing_suggestions)
-
-    else:
-        # Fallback: default to full trip advice
-        print("Intent unclear. Defaulting to full trip advice...\n")
-        weather_info = get_weather(destination, date)
-        packing_suggestions = get_packing_suggestions(weather_info)
-        return _compose_final_response(weather_info, packing_suggestions)
-
-
-def _compose_final_response(weather_info: str, packing_suggestions: str) -> str:
-    """
-    Composes weather and packing info into a single friendly response.
-    Called by the orchestrator when both agents have been invoked.
-    """
-    response = client.chat.completions.create(
-        model=os.getenv("AZURE_OPENAI_DEPLOYMENT", ""),
-        messages=[
-            {
-                "role": "system",
-                "content": """You are a friendly travel assistant composing final responses.
-
-Given weather information and packing suggestions from other sources, create a single
-conversational response that:
-1. Sounds natural and helpful, like a knowledgeable friend
-2. Smoothly combines the weather and packing info (don't just list them separately)
-3. Keeps it concise - 3-4 sentences max
-4. Adds a friendly touch without being over the top"""
-            },
-            {
-                "role": "user",
-                "content": f"""Combine this into a friendly response for the traveller:
-
-Weather Information:
-{weather_info}
-
-Packing Suggestions:
-{packing_suggestions}"""
-            }
-        ],
-        max_completion_tokens=512
-    )
-
-    return response.choices[0].message.content or ""
+    return "\n\n".join(outputs).strip()
