@@ -1,0 +1,72 @@
+{
+  "agent": {
+    "name": "Weather Agent",
+    "description": "Outputs the current weather to the user/agent in plain english. Part of the travel assistant pipeline.",
+    "system_prompt": "This agent is a simple function wrapper (not an LLM). When called: 1) Validate the destination input; 2) Ignore the optional date parameter for backward compatibility; 3) Call the live_weather function with the destination and return its plain-text result or a clear error message.",
+    "model": "none",
+    "provider": "local_function",
+    "model_parameters": {},
+    "output_format": "text"
+  },
+  "test_cases": [
+    {
+      "description": "Typical destination (no date)",
+      "input": {
+        "destination": "Dublin",
+        "date": null
+      },
+      "expected_behavior": "Should call live_weather('Dublin') and return the resulting plain-text weather string."
+    },
+    {
+      "description": "Date provided (ignored)",
+      "input": {
+        "destination": "Paris",
+        "date": "2025-02-14"
+      },
+      "expected_behavior": "Should call live_weather('Paris') and return the resulting weather string. The 'date' parameter should be ignored for backward compatibility and have no effect on output."
+    },
+    {
+      "description": "Empty destination",
+      "input": {
+        "destination": "",
+        "date": null
+      },
+      "expected_behavior": "Should handle gracefully: either return a clear error string (e.g., 'Invalid destination') or a standardized message indicating destination is required. Must not raise an unhandled exception."
+    }
+  ],
+  "evaluation_criteria": {
+    "goals": [
+      "backward_compatibility",
+      "simplicity",
+      "robust_error_handling"
+    ],
+    "constraints": [
+      "Must call live_weather(destination) directly and return its result.",
+      "Must ignore the 'date' parameter (kept for compatibility).",
+      "Must not depend on any LLM model or output any type of generated text.",
+      "Return type must be a plain text string.",
+      "Must not raise unhandled exceptions for typical input errors; return clear error messages instead."
+    ],
+    "mock_tests": [
+      {
+        "description": "Mocked deterministic weather used for ground truth.",
+        "input": { "destination": "Dublin", "date": null },
+        "mocked_live_weather_return": "Dublin: 20°C, Sunny",
+        "expected_output": "Dublin: 20°C, Sunny"
+      },
+      {
+        "description": "Mocked deterministic weather with date ignored used for ground truth",
+        "input": { "destination": "Tokyo", "date": "2026-07-15" },
+        "mocked_live_weather_return": "Tokyo: 28°C, Humid with light rain",
+        "expected_output": "Tokyo: 28°C, Humid with light rain"
+      },
+      {
+        "description": "Mocked deterministic weather with date ignored used for ground truth.",
+        "input": { "destination": "New York", "date": "2026-06-18" },
+        "mocked_live_weather_return": "New York: 22°C, Overcast",
+        "expected_output": "New York: 22°C, Overcast"
+      }
+    ],
+    "priority_description": "The wrapper must be kept simple and reliable to ensure backwards compatibility is maintained at all times."
+  }
+}
