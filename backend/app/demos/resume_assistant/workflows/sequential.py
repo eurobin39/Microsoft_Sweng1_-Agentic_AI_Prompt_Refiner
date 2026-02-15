@@ -14,7 +14,7 @@ Use case:
 
 Architecture:
     User Request → InfoCollectorAgent → JobAnalystAgent → ResumeWriterAgent → ResumeReviewerAgent → Output
-    (each agent sees the full conversation so far)
+    (each agent Sees the full conversation so far)
 """
 
 from agent_framework import SequentialBuilder
