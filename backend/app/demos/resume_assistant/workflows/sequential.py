@@ -3,7 +3,7 @@ Sequential Workflow — chained agent pipeline.
 
 Uses SequentialBuilder from agent_framework.
 Each agent processes in turn, with full conversation history passed
-to the next agent in the sequence.
+to the next agent in the sequence.  
 
 Use case:
 - User provides background + job posting
