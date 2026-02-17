@@ -1,9 +1,7 @@
-
 from __future__ import annotations
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
-from pydantic import BaseModel, Field, validator
-
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ToolCall(BaseModel):
@@ -21,7 +19,8 @@ class ToolCall(BaseModel):
         None, description="Optional ISO timestamp when the tool call completed"
     )
 
-    @validator("timestamp", pre=True, always=False)
+    @field_validator("timestamp", mode="before")
+    @classmethod
     def parse_timestamp(cls, v):
         if v is None or isinstance(v, datetime):
             return v
@@ -45,17 +44,19 @@ class AgentLog(BaseModel):
 
 
 class Handoff(BaseModel):
-    from_agent: Optional[str] = Field(None, description="Agent handing off control")
-    to_agent: Optional[str] = Field(None, description="Agent receiving control")
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_agent: Optional[str] = Field(None, alias="from", description="Agent handing off control")
+    to_agent: Optional[str] = Field(None, alias="to", description="Agent receiving control")
     reason: Optional[str] = Field(None, description="Reason or short note about the handoff")
     timestamp: Optional[datetime] = Field(None, description="When the handoff occurred")
 
-    @validator("timestamp", pre=True, always=False)
+    @field_validator("timestamp", mode="before")
+    @classmethod
     def parse_timestamp(cls, v):
         if v is None or isinstance(v, datetime):
             return v
         return datetime.fromisoformat(v)
-
 
 
 class TraceLog(BaseModel):
@@ -86,11 +87,9 @@ class TraceLog(BaseModel):
     final_output: Optional[str] = Field(None, description="Final combined output sent to user")
     duration_ms: Optional[int] = Field(None, description="Total execution duration in ms")
 
-    @validator("timestamp", pre=True, always=True)
+    @field_validator("timestamp", mode="before")
+    @classmethod
     def parse_timestamp(cls, v):
         if isinstance(v, datetime):
             return v
         return datetime.fromisoformat(v)
-
-
-
