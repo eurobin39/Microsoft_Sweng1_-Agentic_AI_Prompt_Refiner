@@ -1,50 +1,34 @@
 """
 Sequential Workflow — chained agent pipeline.
 
-Uses SequentialBuilder from agent_framework.
-Each agent processes in turn, with full conversation history passed
-to the next agent in the sequence.
-
-Use case:
-- User provides background + job posting
-- InfoCollector extracts structured profile
-- JobAnalyst extracts job requirements + keywords
-- ResumeWriter writes a tailored resume
-- ResumeReviewer scores and suggests improvements
-
-Architecture:
-    User Request → InfoCollectorAgent → JobAnalystAgent → ResumeWriterAgent → ResumeReviewerAgent → Output
-    (each agent Sees the full conversation so far)
+This version uses WorkflowBuilder and calls the agents by their original names.
 """
 
-from agent_framework import SequentialBuilder
+from agent_framework import WorkflowBuilder
 from agent_framework.azure import AzureOpenAIChatClient
 
-from ..agents.definitions import (
-    create_info_collector_agent,
-    create_job_analyst_agent,
-    create_resume_writer_agent,
-    create_resume_reviewer_agent,
+from ..agents import (
+    create_resume_info_collector_agent,
+    create_resume_analysis_agent,
+    create_resume_writing_agent,
+    create_resume_feedback_agent,
 )
 
-
 def build_sequential_workflow(chat_client: AzureOpenAIChatClient):
-    """
-    Build a sequential workflow:
-        collect → analyze → write → review
+    """Build the sequential workflow pipeline."""
+    info = create_resume_info_collector_agent(chat_client)
+    job = create_resume_analysis_agent(chat_client)
+    writer = create_resume_writing_agent(chat_client)
+    feedback = create_resume_feedback_agent(chat_client)
 
-    Later agents see earlier agents' outputs in the conversation history,
-    so writing and review are job-specific and consistent.
-    """
-    info = create_info_collector_agent(chat_client)
-    job = create_job_analyst_agent(chat_client)
-    writer = create_resume_writer_agent(chat_client)
-    reviewer = create_resume_reviewer_agent(chat_client)
-
-    workflow = (
-        SequentialBuilder()
-        .participants([info, job, writer, reviewer])
-        .build()
+    builder = WorkflowBuilder(
+        name="resume_assistant_sequential",
+        description="MAF Resume Assistant: collect -> analyze -> write -> review",
+        start_executor=info,
+        output_executors=[feedback],
     )
 
-    return workflow
+    # Link ALL agents into a single continuous chain, starting from 'info'
+    builder.add_chain([info, job, writer, feedback])
+    
+    return builder.build()

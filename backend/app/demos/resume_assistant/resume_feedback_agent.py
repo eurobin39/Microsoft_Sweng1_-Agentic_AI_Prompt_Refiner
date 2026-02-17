@@ -1,6 +1,9 @@
-# 4th Step.
-# Feedback Agent - Provide feedback on resume content
-# input - generated resume content + job requirements -> output - feedback and suggestions for improvement
+"""
+Legacy compatibility wrapper for Resume Reviewer.
+
+Provides review_resume(resume_content, job_analysis) without requiring MAF wiring.
+Client is created lazily (CI-safe import).
+"""
 
 import os
 from openai import AzureOpenAI
@@ -8,17 +11,17 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-client = AzureOpenAI(
-    azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-    api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-    api_version="2024-12-01-preview"
-)
+
+def _client() -> AzureOpenAI:
+    return AzureOpenAI(
+        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+        api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+        api_version="2024-12-01-preview",
+    )
 
 
 def review_resume(resume_content: str, job_analysis: str, stream: bool = False) -> str:
-    """Takes generated resume content and job requirements, returns feedback and improvement suggestions."""
-
-    response = client.chat.completions.create(
+    response = _client().chat.completions.create(
         model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
         stream=stream,
         messages=[
@@ -43,25 +46,21 @@ Output Format:
 ## Rewrite Suggestions
 [Concrete rewording suggestions for weak bullet points or sections]
 
-Be specific, constructive, and prioritize changes that would have the most impact on ATS scoring and recruiter appeal."""
+Be specific, constructive, and prioritize changes that would have the most impact on ATS scoring and recruiter appeal.""",
             },
             {
                 "role": "user",
-                "content": f"Resume Content:\n{resume_content}\n\nJob Requirements:\n{job_analysis}"
-            }
+                "content": f"Resume Content:\n{resume_content}\n\nJob Requirements:\n{job_analysis}",
+            },
         ],
-        max_completion_tokens=2048
+        max_completion_tokens=2048,
     )
 
     if stream:
-        full_response = ""
+        full = ""
         for chunk in response:
             if chunk.choices and chunk.choices[0].delta.content:
-                content = chunk.choices[0].delta.content
-                print(content, end="", flush=True)
-                full_response += content
-        print()
-        return full_response
-    else:
-        print(response.choices[0].message.content)
-        return response.choices[0].message.content
+                full += chunk.choices[0].delta.content
+        return full
+
+    return response.choices[0].message.content or ""

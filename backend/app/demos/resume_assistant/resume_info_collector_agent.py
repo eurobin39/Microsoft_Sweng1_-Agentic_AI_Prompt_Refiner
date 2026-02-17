@@ -1,7 +1,9 @@
-# 1st Step.
-# Analysis Agent - Gather user's background info
-# input - User Conversation(natural language) -> output - structured data
-# e.g., education, experience, skills, job preferences
+"""
+Legacy compatibility wrapper for Resume Info Collector.
+
+Provides a direct function (collect_info) without requiring MAF wiring.
+Client is created lazily (CI-safe import).
+"""
 
 import os
 from openai import AzureOpenAI
@@ -10,17 +12,16 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
-def collect_info(user_input: str, stream: bool = False) -> str:
-    """Takes user conversation input and returns structured JSON with resume information."""
-
-    # Initialize client at function level (lazy loading) to handle missing env vars in CI
-    client = AzureOpenAI(
+def _client() -> AzureOpenAI:
+    return AzureOpenAI(
         azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
         api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-        api_version="2024-12-01-preview"
+        api_version="2024-12-01-preview",
     )
 
-    response = client.chat.completions.create(
+
+def collect_info(user_input: str, stream: bool = False) -> str:
+    response = _client().chat.completions.create(
         model=os.getenv("AZURE_OPENAI_DEPLOYMENT"),
         stream=stream,
         messages=[
@@ -30,36 +31,29 @@ def collect_info(user_input: str, stream: bool = False) -> str:
 Extract user details into a STRICT JSON format.
 
 Output Format (JSON only):
-    "name": "string or null",
-    "education": ["list of strings"],
-    "skills": ["list of strings"],
-    "experience": ["list of strings"],
-    "projects": ["list of strings"],
-    "certifications": ["list of strings"],
-    "summary": "brief professional summary string"
+{
+  "name": "string or null",
+  "education": ["list of strings"],
+  "skills": ["list of strings"],
+  "experience": ["list of strings"],
+  "projects": ["list of strings"],
+  "certifications": ["list of strings"],
+  "summary": "brief professional summary string"
+}
 
-Return ONLY the structured summary. Do not add conversational filler."""
+Return ONLY JSON. Do not add conversational filler. Do not add markdown fences.""",
             },
-            {
-                "role": "user",
-                "content": f"User Input: {user_input}"
-            }
+            {"role": "user", "content": f"User Input: {user_input}"},
         ],
-        max_completion_tokens=2048
+        max_completion_tokens=2048,
     )
 
     if stream:
-        full_response = ""
+        full = ""
         for chunk in response:
             if chunk.choices and chunk.choices[0].delta.content:
-                content = chunk.choices[0].delta.content
-                print(content, end="", flush=True)
-                full_response += content
-        print()
-        clean_response = full_response.replace("```json", "").replace("```", "").strip()
-        return clean_response
-    else:
-        raw = response.choices[0].message.content
-        print(raw)
-        clean_response = raw.replace("```json", "").replace("```", "").strip()
-        return clean_response
+                full += chunk.choices[0].delta.content
+        return full.replace("```json", "").replace("```", "").strip()
+
+    raw = response.choices[0].message.content or ""
+    return raw.replace("```json", "").replace("```", "").strip()
