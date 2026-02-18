@@ -1,7 +1,24 @@
 """
 Sequential Workflow — chained agent pipeline.
 
+<<<<<<< HEAD
 This version uses WorkflowBuilder and calls the agents by their original names.
+=======
+Uses SequentialBuilder from agent_framework.
+Each agent processes in turn, with full conversation history passed
+to the next agent in the sequence.  
+
+Use case:
+- User provides background + job posting
+- InfoCollector extracts structured profile
+- JobAnalyst extracts job requirements + keywords
+- ResumeWriter writes a tailored resume
+- ResumeReviewer scores and suggests improvements
+
+Architecture:
+    User Request → InfoCollectorAgent → JobAnalystAgent → ResumeWriterAgent → ResumeReviewerAgent → Output
+    (each agent Sees the full conversation so far)
+>>>>>>> 39ea7ee52e3697c19727a4a3c18685c5fed67126
 """
 
 from agent_framework import WorkflowBuilder
