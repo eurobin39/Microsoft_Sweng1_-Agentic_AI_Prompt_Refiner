@@ -19,9 +19,9 @@ load_dotenv()
 
 def get_chat_client() -> AzureOpenAIChatClient:
     """Create an AzureOpenAIChatClient with hardcoded fallback credentials."""
-    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT") or "https://ai-hub-tcd.cognitiveservices.azure.com/"
-    api_key = os.getenv("AZURE_OPENAI_API_KEY") or "F4uBZXKF3LQJemRKKwMfh0KvAMLlahNv6s6IeJd57PcyE81TstFlJQQJ99CBACfhMk5XJ3w3AAAAACOGystX"
-    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT") or "gpt-5.2-chat"
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT")
 
     if api_key:
         return AzureOpenAIChatClient(
