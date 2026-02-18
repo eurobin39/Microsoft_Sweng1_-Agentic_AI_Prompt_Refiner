@@ -106,3 +106,8 @@ class AgentBlueprint(BaseModel):
         if not v or len(v) < 1:
             raise ValueError("test_cases must contain at least one TestCase")
         return v
+
+#wrapper for FastAPI router
+class EvaluationRequest(BaseModel):
+    blueprint: AgentBlueprint #agent info, test cases, etc.
+    traces: list[TraceLog] #log model 
