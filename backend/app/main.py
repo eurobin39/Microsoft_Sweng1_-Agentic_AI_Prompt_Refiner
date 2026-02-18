@@ -2,7 +2,7 @@
 FastAPI Application Entry Point
 TODO: Configure FastAPI app, add middleware, and include routers
 """
-#ignore next 2 lines, i added these to run locally in terminal as docker is not setup. 
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -19,6 +19,8 @@ app = FastAPI(
 
 app.include_router(health.router, prefix="/api", tags=["health"])
 app.include_router(resume_demo.router, prefix="/api/v1", tags=["Resume Demo"])
+app.include_router(evaluation.router, prefix="/api/v1", tags=["Evaluation"])
+
 
 @app.get("/")
 async def root():

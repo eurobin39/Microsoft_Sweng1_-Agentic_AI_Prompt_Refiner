@@ -12,7 +12,7 @@ variables:
   AZURE_OPENAI_ENDPOINT: ${AZURE_OPENAI_ENDPOINT}
   AZURE_OPENAI_DEPLOYMENT: ${AZURE_OPENAI_DEPLOYMENT}
   GIT_DEPTH: "0"
-  GIT_STRATEGY: clone # Ensure we have the full history for better debugging and coverage reports
+  GIT_STRATEGY: clone # Ensure   we have the full history for better debugging and coverage reports
 
 cache:
   paths:

@@ -23,3 +23,8 @@ An AI agent judge project that evaluates and refines prompts using ensemble mode
    ```bash
    docker-compose up
    ```
+
+
+Pratyaksh
+Daniel
+
