@@ -59,11 +59,12 @@ class Handoff(BaseModel):
         return datetime.fromisoformat(v)
 
 
+#log model
 class TraceLog(BaseModel):
     """ Model for execution trace logs:
 
-    - timestamp: when the trace started/was recorded
-    - mode: execution mode (e.g., "concurrent" or "sequential") (will probably be handoff)
+    - timestamp -  when the trace started/was recorded
+    - mode -  execution mode (e.g., "concurrent" or "sequential") (will probably be handoff)
     - input: original user input
     - agents: mapping agent_name -> AgentLog
     - execution_order: ordered list of agent names that executed
