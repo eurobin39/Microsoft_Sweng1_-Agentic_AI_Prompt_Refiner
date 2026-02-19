@@ -23,12 +23,6 @@ from ..mock_data import (
 from ..weather_api import live_weather, live_forecast
 
 
-from agent_framework import tool
-from .judge_tools import save_evaluation_result
-
-
-
-
 # ═══════════════════════════ Tools ═══════════════════════════
 
 # ── Weather tools ──
@@ -75,10 +69,6 @@ def book_flight(flight_id: str, passenger_name: str) -> str:
 def book_hotel(hotel_id: str, guest_name: str, nights: int = 3) -> str:
     return mock_book_hotel(hotel_id, guest_name, nights)
 
-# ── Judge tools ──
-@tool(name = "save_evaluation_result", description = "saves a .json file to evaluation_logs of the agents performance on a given task/prompt")
-def store_evaluation_result(agent_name: str, score: float, summary: str) -> bool:
-    return save_evaluation_result(agent_name, score, summary)
 
 # ═══════════════════════════ Agent Factories ═══════════════════════════
 
