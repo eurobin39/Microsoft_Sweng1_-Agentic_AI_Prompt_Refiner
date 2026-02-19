@@ -109,11 +109,11 @@
             "description": "The user message sent to the agent.",
             "properties" : {
               "destination" : {
-                type : "string",
+                "type" : "string"
               },
               "date" : {
-                type  : ["string", "null"],
-              },
+                "type"  : ["string", "null"]
+              }
             },
            "required": ["destination", "date"]
           },

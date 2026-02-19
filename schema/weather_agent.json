@@ -4,7 +4,7 @@
     "description": "Outputs the current weather to the user/agent in plain english. Part of the travel assistant pipeline.",
     "system_prompt": "This agent is a simple function wrapper (not an LLM). When called: 1) Validate the destination input; 2) Ignore the optional date parameter for backward compatibility; 3) Call the live_weather function with the destination and return its plain-text result or a clear error message.",
     "model": "none",
-    "provider": "local_function",
+    "provider": "azure_openai",
     "model_parameters": {},
     "output_format": "text"
   },
