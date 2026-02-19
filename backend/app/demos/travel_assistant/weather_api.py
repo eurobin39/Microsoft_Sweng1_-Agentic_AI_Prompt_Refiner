@@ -14,7 +14,7 @@ import json
 import logging
 import requests
 from datetime import datetime
-
+ 
 logger = logging.getLogger("travel_assistant")
 
 _GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
