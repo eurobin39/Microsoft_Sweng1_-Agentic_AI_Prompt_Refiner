@@ -105,8 +105,17 @@
             "examples": ["Handles a simple Python function", "Edge case: empty input"]
           },
           "input": {
-            "type": "string",
-            "description": "The user message sent to the agent."
+            "type": "object",
+            "description": "The user message sent to the agent.",
+            "properties" : {
+              "destination" : {
+                type : "string",
+              },
+              "date" : {
+                type  : ["string", "null"],
+              },
+            },
+           "required": ["destination", "date"]
           },
           "expected_output": {
             "type": "string",
@@ -151,7 +160,7 @@
           "examples": ["Accuracy is more important than brevity. The agent should never guess — if unsure, it should say so."]
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     }
   },
   "additionalProperties": false
