@@ -1,0 +1,60 @@
+{
+  "description": "Ground truth for the travel_assistant demo — ideal agent outputs for 'What should I pack for Tokyo in March?' The actual system prompts are intentionally shallow, so the judge compares these ideal outputs against what the dumbed-down agents actually produce.",
+  "test_case": {
+    "user_request": "What should I pack for Tokyo in March?",
+    "destination": "Tokyo",
+    "month": "March"
+  },
+  "ideal_trace": {
+    "mode": "graph",
+    "agents": {
+      "weather_agent": {
+        "instructions": "Tell the user about the weather at their destination. Use get_weather for now and get_forecast for the week ahead.",
+        "tools_available": ["get_weather", "get_forecast"],
+        "tool_calls": [
+          {
+            "tool": "get_weather",
+            "arguments": {"destination": "Tokyo"},
+            "result": "Current conditions returned by live weather API"
+          },
+          {
+            "tool": "get_forecast",
+            "arguments": {"destination": "Tokyo", "days": 5},
+            "result": "5-day forecast returned by live weather API"
+          }
+        ],
+        "output": "Tokyo in March sits right at the end of winter moving into spring. Expect temperatures between 8°C and 14°C (46–57°F) — cool mornings and mild afternoons. Humidity is around 60%, which feels comfortable but can make evenings feel colder than the thermometer suggests. Rain is likely: March averages about 120mm over 12 rainy days, so a waterproof layer is essential. The second half of March often sees the first cherry blossom (sakura) blooms, which brings crowds to parks like Ueno and Shinjuku Gyoen. Wind can be brisk, especially in open areas. Layer up and carry an umbrella.",
+        "duration_ms": 1800
+      },
+      "packing_agent": {
+        "instructions": "Help the user figure out what to pack based on the weather and their trip type.",
+        "tools_available": ["get_packing_list", "check_luggage_restrictions"],
+        "tool_calls": [
+          {
+            "tool": "get_packing_list",
+            "arguments": {"weather_summary": "cool, rainy, 8-14C, humid", "trip_type": "city"},
+            "result": "Packing list returned by mock data"
+          }
+        ],
+        "output": "## Clothing\n- 3–4 light base layers (long-sleeve t-shirts or thin merino wool)\n- 1 mid-layer fleece or light jumper\n- 1 waterproof jacket (essential — March rain is frequent)\n- 1 pair of smart-casual trousers and 1 pair of jeans\n- Comfortable walking shoes with good grip (you will walk a lot; avoid open-toed shoes for temple visits)\n- A light scarf for wind and cool evenings\n\n## Toiletries\n- Standard toiletries (note: Japan has 100ml carry-on rules identical to EU/US)\n- Small pack of tissues — public restrooms often lack paper towels\n- Hand sanitiser (widely available in Japan but handy in transit)\n\n## Documents & Money\n- Passport + return flight details\n- IC card (Suica or Pasmo) for trains and buses — load at the airport on arrival\n- Cash yen: Japan is still heavily cash-based outside central Tokyo; ATMs at 7-Eleven/Post Office are foreigner-friendly\n- Travel insurance documents\n\n## Electronics\n- Phone + charger + portable battery pack (Tokyo days are long)\n- Universal adapter (Japan uses Type A plugs, same as US, so EU travellers need an adapter)\n- Earphones for long train journeys\n\n## Tokyo-specific tips\n- Pack light-coloured clothes for cherry blossom picnics\n- Bring a small foldable bag for shopping — plastic bags are charged in Japan\n- Slip-on shoes save time at temple entries where shoes must be removed",
+        "duration_ms": 1500
+      }
+    },
+    "execution_order": ["weather_agent", "packing_agent"],
+    "handoffs": [],
+    "final_output": "Ideal: weather output explicitly names March temperature range (8–14°C), mentions 60% humidity and cherry blossom season context, and flags light rain likelihood. Packing output is organised by category (clothing/toiletries/documents/electronics), uses Tokyo-specific tips (IC card, cash, no open-toe shoes for temples, plastic bag charge), and recommends layering rather than a generic warm-coat approach.",
+    "duration_ms": 3300
+  },
+  "judge_notes": {
+    "common_gaps_from_shallow_prompts": [
+      "weather_agent may give a generic temperature range without mentioning the 8–14°C March specifics",
+      "weather_agent may omit the cherry blossom season context entirely",
+      "weather_agent may not mention the 60% humidity or rain frequency",
+      "packing_agent may produce a generic city packing list with no Tokyo-specific tips",
+      "packing_agent may omit the IC card / cash recommendation",
+      "packing_agent may not suggest slip-on shoes for temple visits",
+      "packing_agent may generate an excessively long generic list (over-the-top) with irrelevant items",
+      "packing_agent may not organise by category (clothing/toiletries/documents/electronics)"
+    ]
+  }
+}

@@ -94,6 +94,16 @@ async def main() -> None:
         trace_dir=trace_dir,
     )
 
+    # ─── 6. GRAPH: Packing request routed via WorkflowBuilder ───
+    header("6. GRAPH — What should I pack for Tokyo in March?")
+    print("User: 'What should I pack for Tokyo in March?'\n")
+    await run_workflow(
+        "What should I pack for Tokyo in March?",
+        mode="graph",
+        log_file=log_file,
+        trace_dir=trace_dir,
+    )
+
     header("DEMO COMPLETE")
     print(f"📝 Event logs: {log_file}")
     print(f"📄 JSON traces: {trace_dir}/")

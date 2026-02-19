@@ -1,0 +1,63 @@
+{
+  "description": "Ground truth for the resume_assistant demo — ideal agent outputs for a backend engineer applying for a FinTech Senior Backend Engineer role. The actual system prompts are intentionally shallow, so the judge compares these ideal outputs against what the dumbed-down agents actually produce.",
+  "test_case": {
+    "candidate": "Euro Bae — backend/full-stack engineer with Python, Node.js, AWS, Docker, PostgreSQL, GraphQL experience",
+    "target_role": "Senior Backend Engineer at a FinTech startup — requires Python/Go, microservices, AWS, PostgreSQL, Redis, Docker/Kubernetes"
+  },
+  "ideal_trace": {
+    "mode": "graph",
+    "agents": {
+      "resume_info_collector": {
+        "instructions": "Pull out the person's info from their resume. Return as JSON with name, education, skills, experience, projects.",
+        "tools_available": [],
+        "tool_calls": [],
+        "output": "{\"name\": \"Euro Bae\", \"education\": [\"Trinity College Dublin — Honors B.Sc. Integrated Computer Science (Sep 2021–May 2027). Global Excellence Undergraduate Scholarship; Trinity International Foundation Scholarship. Awards: Software Engineering Project Industry Award (Sustainability), Huawei Tech Arena 2025 LLM Hackathon 3rd Prize.\"], \"skills\": [\"Python\", \"Java\", \"JavaScript\", \"TypeScript\", \"C\", \"Node.js\", \"React\", \"React Native\", \"Next.js\", \"Docker\", \"Git\", \"Linux\", \"REST API\", \"PostgreSQL\", \"MySQL\", \"MongoDB\", \"GraphQL\", \"AWS\", \"Grafana\", \"Supabase\", \"Cloudflare\"], \"experience\": [\"Undergraduate Demonstrator, Trinity College Dublin (09/2025–present): supported students with Python, Excel, Microsoft Expression Web 4.\", \"Full Stack Engineer Intern, Workday (01/2025–04/2025): built React + Node.js features covering 80%+ of codebase; set up CI/CD via GitLab Runner on Raspberry Pi with SSH tunneling; migrated DB to Raspberry Pi cutting energy use ~93%.\", \"Software Engineer Trainee, Samsung SDS (02/2024–07/2024): automated workflows with RPA; prototyped smart factory combining RPA, ML, IoT.\", \"Military Police Sergeant, Ministry of National Defense (08/2022–02/2024): investigations, intelligence-gathering tech, command structures.\", \"Data Analyst Intern, Media & Data Institute (05/2021–09/2021): migrated data layer from SQL to GraphQL; data governance and privacy work.\"], \"projects\": [\"A.T.M. (Automated Trading Manager): Python trading bot with Binance API, stop-loss and entry logic, macro indicator analysis.\", \"AURA: AI productivity tracker (team of 5) with Azure Face API + OpenAI; webcam/keyboard data + LLM insights.\", \"OLY: full-stack community platform (team of 7) using React Native, Expo, Supabase; marketplace, rental, currency exchange, chat, auth features; deployed to TestFlight and Google Play.\"], \"certifications\": [], \"summary\": \"Full-stack engineer with strong Python, Node.js, and cloud (AWS, Docker) skills; proven experience delivering CI/CD pipelines, database migrations, and team-led projects.\"}",
+        "duration_ms": 1500
+      },
+      "resume_job_analyzer": {
+        "instructions": "Read the job description and extract the key requirements. Return as JSON.",
+        "tools_available": [],
+        "tool_calls": [],
+        "output": "{\"role\": \"Senior Backend Engineer\", \"required_skills\": [\"Python\", \"Go\", \"microservices\", \"distributed systems\", \"AWS\", \"PostgreSQL\", \"Redis\", \"Docker\", \"Kubernetes\", \"CI/CD\"], \"preferred_skills\": [\"fintech or payments experience\", \"AWS certification\", \"technical leadership\", \"mentoring\", \"Kafka\", \"RabbitMQ\", \"event-driven architecture\"], \"keywords\": [\"payments infrastructure\", \"scalable APIs\", \"backend services\", \"microservices\", \"distributed systems\", \"cloud\", \"containerization\"], \"experience_level\": \"Senior\", \"domain\": \"FinTech / Payments\"}",
+        "duration_ms": 1000
+      },
+      "resume_writer": {
+        "instructions": "Write a resume based on the person's profile and the job they're applying for.",
+        "tools_available": [],
+        "tool_calls": [],
+        "output": "\\documentclass[11pt,a4paper]{article}\n\\usepackage[margin=0.75in]{geometry}\n\\usepackage{enumitem}\n\\usepackage{hyperref}\n\\pagestyle{empty}\n\\begin{document}\n\n\\begin{center}\n  {\\LARGE \\textbf{Euro Bae}} \\\\\n  Dublin, Ireland $\\cdot$ +353 083 449 6428 $\\cdot$ eurobin39@gmail.com\n\\end{center}\n\n\\section*{Summary}\nBackend-focused engineer with 3+ years building scalable APIs and data pipelines using Python, Node.js, Docker, and AWS. Experienced in CI/CD, PostgreSQL, and GraphQL-based microservices. Strong track record delivering production systems in team environments.\n\n\\section*{Experience}\n\\textbf{Full Stack Engineer Intern} \\hfill Workday, Dublin $\\cdot$ Jan–Apr 2025 \\\\\n\\begin{itemize}[noitemsep]\n  \\item Designed and maintained Python/Node.js backend services covering 80\\%+ of the codebase\n  \\item Built CI/CD pipeline with GitLab Runner on Raspberry Pi; reduced deployment friction via SSH tunneling\n  \\item Migrated PostgreSQL database and server infrastructure, cutting energy consumption by $\\sim$93\\%\n\\end{itemize}\n\n\\textbf{Data Analyst Intern} \\hfill Media \\& Data Institute, Seoul $\\cdot$ May–Sep 2021 \\\\\n\\begin{itemize}[noitemsep]\n  \\item Refactored data access layer from SQL to GraphQL, improving scalability and frontend integration\n  \\item Collaborated on data governance policies aligned with privacy regulations\n\\end{itemize}\n\n\\textbf{Software Engineer Trainee} \\hfill Samsung SDS, Suwon $\\cdot$ Feb–Jul 2024 \\\\\n\\begin{itemize}[noitemsep]\n  \\item Automated workflows with RPA tools; prototyped IoT + ML smart factory system\n\\end{itemize}\n\n\\section*{Projects}\n\\textbf{OLY — Community Platform} (React Native, Expo, Supabase) \\\\\nLed 7-member team to build and ship a full-stack app with marketplace, payments, chat, and auth features on TestFlight and Google Play.\n\n\\textbf{AURA — AI Productivity Tracker} (Azure Face API, OpenAI, Python) \\\\\nLed team of 5; integrated LLMs and computer vision to generate real-time productivity insights.\n\n\\textbf{A.T.M. — Automated Trading Manager} (Python, Binance API) \\\\\nBuilt automated trading bot with stop-loss logic and macro indicator analysis.\n\n\\section*{Skills}\n\\textbf{Languages:} Python, JavaScript/TypeScript, Java, C \\\\\n\\textbf{Backend \\& Cloud:} Node.js, REST APIs, Docker, AWS, PostgreSQL, MySQL, GraphQL \\\\\n\\textbf{DevOps:} CI/CD, GitLab Runner, Linux, Git \\\\\n\\textbf{Distributed:} Microservices patterns, event-driven design\n\n\\section*{Education}\n\\textbf{Trinity College Dublin} — B.Sc. Integrated Computer Science \\hfill 2021–2027 \\\\\nGlobal Excellence Scholarship $\\cdot$ Huawei LLM Hackathon 3rd Prize $\\cdot$ Industry Award (Sustainability)\n\n\\end{document}",
+        "duration_ms": 3000
+      },
+      "resume_reviewer": {
+        "instructions": "Review the resume against the job requirements. Give a score out of 10 and list what's good and what needs improving.",
+        "tools_available": [],
+        "tool_calls": [],
+        "output": "## Overall Score\n7/10 — Strong Python/backend foundation and CI/CD experience align well with core requirements. Missing Redis and Kubernetes, which are explicitly listed. No fintech/payments domain experience.\n\n## Strengths\n- Python and Node.js backend experience directly matches the primary stack\n- PostgreSQL and Docker usage confirmed across multiple roles\n- CI/CD pipeline built from scratch demonstrates DevOps competence\n- Led multi-person engineering teams (OLY: 7 members; AURA: 5 members) — addresses leadership nice-to-have\n- GraphQL data layer migration shows microservices-adjacent thinking\n\n## Areas for Improvement\n- Add Redis to skills or show caching experience (e.g., session management or API response caching in one of the projects)\n- Kubernetes is absent — at minimum, acknowledge familiarity or add a short project using k8s locally\n- Payments/FinTech domain is entirely missing; consider framing the trading bot (ATM) as fintech-adjacent\n- Go is listed as preferred; if any exposure exists, add it\n\n## Keyword Gaps\n- Redis (explicitly required, not mentioned)\n- Kubernetes (explicitly required, not mentioned)\n- Microservices (pattern used but word absent from resume)\n- Payments / payments infrastructure (core domain keyword)\n- Event-driven / Kafka / RabbitMQ (preferred, none present)\n\n## Rewrite Suggestions\n- Workday bullet: \"Migrated PostgreSQL database\" → \"Migrated and optimised PostgreSQL database; introduced query caching strategy reducing average response time by X%\"\n- ATM project: \"Built automated trading bot\" → \"Built Python-based automated trading service with event-driven signal processing and financial data pipeline — relevant to payments infrastructure design\"\n- Add a Skills entry: \"Distributed Systems: microservices patterns, message queues (RabbitMQ basics), event-driven architecture\"",
+        "duration_ms": 2000
+      }
+    },
+    "execution_order": [
+      "resume_info_collector",
+      "resume_job_analyzer",
+      "resume_writer",
+      "resume_reviewer"
+    ],
+    "handoffs": [],
+    "final_output": "Ideal pipeline: collector captures all fields including certifications and structured bullets; analyzer identifies Redis and Kubernetes as required; writer front-loads Python/AWS keywords and tailors bullet points to payments/microservices; reviewer gives specific score with named keyword gaps (Redis, Kubernetes) and actionable rewrites.",
+    "duration_ms": 7500
+  },
+  "judge_notes": {
+    "common_gaps_from_shallow_prompts": [
+      "resume_info_collector may miss certifications field entirely",
+      "resume_info_collector may collapse multi-bullet experience entries into single strings",
+      "resume_job_analyzer may omit Redis and Kubernetes from required_skills",
+      "resume_job_analyzer may not distinguish required vs preferred skills",
+      "resume_writer may not front-load Python/AWS keywords for ATS",
+      "resume_writer may produce a two-page resume instead of one page",
+      "resume_writer may not tailor bullet points to payments/microservices domain",
+      "resume_reviewer may give a generic score without per-section feedback",
+      "resume_reviewer may not name specific missing keywords like Redis or Kubernetes",
+      "resume_reviewer may not suggest concrete rewordings of existing bullet points"
+    ]
+  }
+}

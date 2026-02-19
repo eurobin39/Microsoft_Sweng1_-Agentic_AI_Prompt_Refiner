@@ -1,0 +1,5 @@
+{
+  "azure_openai_endpoint": "",
+  "azure_openai_deployment": "",
+  "api_version": "2024-12-01-preview"
+}

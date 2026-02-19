@@ -23,7 +23,7 @@ from agent_framework.azure import AzureOpenAIChatClient
 from azure.identity import AzureCliCredential
 from dotenv import load_dotenv
 
-from .workflows import build_handoff_workflow, build_concurrent_workflow, build_sequential_workflow
+from .workflows import build_handoff_workflow, build_concurrent_workflow, build_sequential_workflow, build_graph_workflow
 from .logger import WorkflowTracer, setup_logging
 
 load_dotenv()
@@ -65,7 +65,7 @@ async def run_workflow(
 
     Args:
         user_request: The user's travel question.
-        mode: Workflow pattern — "handoff", "concurrent", or "sequential".
+        mode: Workflow pattern — "handoff", "concurrent", "sequential", or "graph".
         stream: If True, print agent responses as they stream.
         log_file: Optional path for log file.
         trace_dir: Directory to save JSON traces.
@@ -75,17 +75,21 @@ async def run_workflow(
     """
     setup_logging(level=logging.INFO, log_file=log_file)
 
-    chat_client = get_chat_client()
-
     # Build the requested workflow
-    if mode == "handoff":
-        workflow = build_handoff_workflow(chat_client)
-    elif mode == "concurrent":
-        workflow = build_concurrent_workflow(chat_client)
-    elif mode == "sequential":
-        workflow = build_sequential_workflow(chat_client)
+    if mode == "graph":
+        workflow = build_graph_workflow()
+        workflow_input: Any = {"user_request": user_request}
     else:
-        raise ValueError(f"Unknown mode: {mode}. Choose 'handoff', 'concurrent', or 'sequential'.")
+        chat_client = get_chat_client()
+        if mode == "handoff":
+            workflow = build_handoff_workflow(chat_client)
+        elif mode == "concurrent":
+            workflow = build_concurrent_workflow(chat_client)
+        elif mode == "sequential":
+            workflow = build_sequential_workflow(chat_client)
+        else:
+            raise ValueError(f"Unknown mode: {mode}. Choose 'handoff', 'concurrent', 'sequential', or 'graph'.")
+        workflow_input = user_request
 
     # Set up tracer
     tracer = WorkflowTracer(user_input=user_request, mode=mode)
@@ -94,7 +98,7 @@ async def run_workflow(
     final_output = ""
     last_response_id: str | None = None
 
-    async for event in workflow.run_stream(user_request):
+    async for event in workflow.run_stream(workflow_input):
         tracer.capture(event)
 
         if stream and isinstance(event, WorkflowOutputEvent):
