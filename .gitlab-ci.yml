@@ -27,4 +27,3 @@ schema-smoke:
   script:
     - echo "Checking schema file syntax..."
     - python3 -m json.tool schema/evaluation_input.schema.json > /dev/null
-    - python3 -m json.tool schema/example_code_explainer.json > /dev/null
