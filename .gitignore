@@ -70,3 +70,6 @@ Thumbs.db
 
 # Docker
 *.log
+
+# Claude
+CLAUDE.md
