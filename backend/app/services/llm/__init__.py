@@ -1,3 +1,0 @@
-"""
-LLM service clients package
-"""

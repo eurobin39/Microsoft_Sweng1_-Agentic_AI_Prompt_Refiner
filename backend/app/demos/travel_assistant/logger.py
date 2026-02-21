@@ -57,40 +57,14 @@ def setup_logging(level: int = logging.INFO, log_file: str | None = None) -> Non
 # Hardcoded from definitions.py so traces always have the real prompts.
 
 _AGENT_INSTRUCTIONS = {
-    "triage_agent": (
-        "You are a travel assistant triage agent. Analyse the user's request and "
-        "route it to the appropriate specialist:\n\n"
-        "- For weather questions → call handoff_to_weather_agent\n"
-        "- For packing/luggage questions → call handoff_to_packing_agent\n"
-        "- For activity/sightseeing questions → call handoff_to_activities_agent\n"
-        "- For flight/hotel/booking questions → call handoff_to_booking_agent\n\n"
-        "If the request covers multiple topics, pick the most relevant specialist first. "
-        "The specialist can hand off to another if needed.\n"
-        "Be friendly and brief when responding directly."
-    ),
+    "triage_agent": "Figure out what the user needs help with and send them to the right agent.",
     "weather_agent": (
-        "You are a travel weather specialist. Use get_weather for current conditions "
-        "and get_forecast for multi-day outlooks. Summarise clearly: temperature, "
-        "conditions, rain chance. Highlight notable day-to-day changes in forecasts. "
-        "If the user also needs packing advice, call handoff_to_packing_agent. "
-        "If they need activities, call handoff_to_activities_agent."
+        "Tell the user about the weather at their destination. "
+        "Use get_weather for now and get_forecast for the week ahead."
     ),
-    "packing_agent": (
-        "You are a travel packing specialist. Use the conversation's weather context "
-        "to call get_packing_list with an appropriate trip_type. Also offer luggage tips "
-        "via check_luggage_restrictions. Organise suggestions by category. Be concise."
-    ),
-    "activities_agent": (
-        "You are a local travel guide. Use get_activities for destination suggestions "
-        "and get_local_tips for practical advice. Highlight top-rated options and hidden "
-        "gems. Tailor to weather if context is available. Be enthusiastic but concise."
-    ),
-    "booking_agent": (
-        "You are a travel booking specialist. Use search_flights and search_hotels to "
-        "show options with prices and ratings. Highlight best value and premium options. "
-        "When asked to book, use book_flight or book_hotel and confirm the reference. "
-        "Always confirm details before booking."
-    ),
+    "packing_agent": "Help the user figure out what to pack based on the weather and their trip type.",
+    "activities_agent": "Suggest things to do at the destination. Use get_activities and get_local_tips.",
+    "booking_agent": "Help the user find and book flights and hotels.",
 }
 
 _AGENT_TOOLS = {

@@ -1,0 +1,47 @@
+{
+  "description": "Ground truth for the code_assistant demo — ideal agent outputs for the sample calculate + process_data functions. The actual system prompts are intentionally shallow, so the judge compares these ideal outputs against what the dumbed-down agents actually produce.",
+  "test_case": {
+    "code": "\ndef calculate(x, y):\n    return x + y\n\ndef process_data(items):\n    result = []\n    for item in items:\n        if item > 0:\n            result.append(item * 2)\n    return result\n",
+    "user_request": "What does this code do? / Refactor this code."
+  },
+  "ideal_trace": {
+    "mode": "graph",
+    "agents": {
+      "code_explainer": {
+        "instructions": "Explain what the code does in plain English.",
+        "tools_available": [],
+        "tool_calls": [],
+        "output": "This code defines two functions:\n\n1. **calculate(x, y)** — adds two numbers together and returns the sum. For example, `calculate(3, 4)` returns `7`.\n\n2. **process_data(items)** — filters and transforms a list of numbers. It keeps only positive numbers (greater than 0) and doubles each one. For example, `process_data([-1, 0, 2, 5])` returns `[4, 10]`. It builds the result list using an accumulator pattern, appending each doubled value one at a time.",
+        "duration_ms": 800
+      },
+      "code_refactor": {
+        "instructions": "Rewrite the code to be cleaner and easier to read.",
+        "tools_available": [],
+        "tool_calls": [],
+        "output": "## Refactored Code\n\n```python\ndef calculate(x: float, y: float) -> float:\n    \"\"\"Return the sum of x and y.\"\"\"\n    return x + y\n\n\ndef process_data(items: list[float]) -> list[float]:\n    \"\"\"Return a list of doubled positive values from items.\"\"\"\n    return [item * 2 for item in items if item > 0]\n```\n\n## Changes Made\n- Added type annotations to both functions\n- Replaced the explicit loop and `result` accumulator in `process_data` with a list comprehension — same logic, fewer lines\n- Renamed nothing; the existing names are already clear\n- Added one-line docstrings explaining each function's purpose\n\n## Reasoning\nList comprehensions are idiomatic Python and make the filter-and-transform pattern immediately readable. Type hints help callers and tools understand what the functions accept and return.",
+        "duration_ms": 1200
+      },
+      "code_documenter": {
+        "instructions": "Add docstrings and comments to the code.",
+        "tools_available": [],
+        "tool_calls": [],
+        "output": "## Documented Code\n\n```python\ndef calculate(x: float, y: float) -> float:\n    \"\"\"\n    Add two numbers together.\n\n    Args:\n        x: The first operand.\n        y: The second operand.\n\n    Returns:\n        The sum of x and y.\n    \"\"\"\n    return x + y\n\n\ndef process_data(items: list[float]) -> list[float]:\n    \"\"\"\n    Filter and double positive values from a list.\n\n    Iterates over items, keeps only those greater than zero,\n    doubles each retained value, and returns the resulting list.\n\n    Args:\n        items: A sequence of numeric values to process.\n\n    Returns:\n        A new list containing 2 * item for each item > 0.\n\n    Examples:\n        >>> process_data([-1, 0, 3, 5])\n        [6, 10]\n    \"\"\"\n    result = []\n    for item in items:\n        if item > 0:          # skip non-positive values\n            result.append(item * 2)  # double and collect\n    return result\n```\n\n## Documentation Summary\nAdded Google-style docstrings to both functions covering purpose, parameters, return values, and a usage example for `process_data`.",
+        "duration_ms": 1000
+      }
+    },
+    "execution_order": ["code_explainer", "code_refactor", "code_documenter"],
+    "handoffs": [],
+    "final_output": "Ideal: explanation covers both functions, explicitly mentions the > 0 filter, explains the doubling and accumulator pattern, uses a concrete example. Refactor uses a list comprehension with type annotations and explains each change. Documentation includes Args/Returns/Examples sections.",
+    "duration_ms": 3000
+  },
+  "judge_notes": {
+    "common_gaps_from_shallow_prompts": [
+      "code_explainer may omit the > 0 filter condition entirely",
+      "code_explainer may not give a concrete input/output example",
+      "code_refactor may not add type annotations despite 'cleaner' instruction",
+      "code_refactor may not explain why the list comprehension is better",
+      "code_documenter may add only a one-line docstring with no Args/Returns",
+      "code_documenter may omit the inline comment explaining the > 0 filter"
+    ]
+  }
+}

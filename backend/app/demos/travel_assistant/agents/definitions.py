@@ -82,17 +82,7 @@ def create_triage_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
     """
     return ChatAgent(
         name="triage_agent",
-        instructions=(
-            "You are a travel assistant triage agent. Analyse the user's request and "
-            "route it to the appropriate specialist:\n\n"
-            "- For weather questions → call handoff_to_weather_agent\n"
-            "- For packing/luggage questions → call handoff_to_packing_agent\n"
-            "- For activity/sightseeing questions → call handoff_to_activities_agent\n"
-            "- For flight/hotel/booking questions → call handoff_to_booking_agent\n\n"
-            "If the request covers multiple topics, pick the most relevant specialist first. "
-            "The specialist can hand off to another if needed.\n"
-            "Be friendly and brief when responding directly."
-        ),
+        instructions="Figure out what the user needs help with and send them to the right agent.",
         chat_client=chat_client,
     )
 
@@ -101,11 +91,8 @@ def create_weather_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
     return ChatAgent(
         name="weather_agent",
         instructions=(
-            "You are a travel weather specialist. Use get_weather for current conditions "
-            "and get_forecast for multi-day outlooks. Summarise clearly: temperature, "
-            "conditions, rain chance. Highlight notable day-to-day changes in forecasts. "
-            "If the user also needs packing advice, call handoff_to_packing_agent. "
-            "If they need activities, call handoff_to_activities_agent."
+            "Tell the user about the weather at their destination. "
+            "Use get_weather for now and get_forecast for the week ahead."
         ),
         chat_client=chat_client,
         tools=[get_weather, get_forecast],
@@ -115,11 +102,7 @@ def create_weather_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
 def create_packing_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
     return ChatAgent(
         name="packing_agent",
-        instructions=(
-            "You are a travel packing specialist. Use the conversation's weather context "
-            "to call get_packing_list with an appropriate trip_type. Also offer luggage tips "
-            "via check_luggage_restrictions. Organise suggestions by category. Be concise."
-        ),
+        instructions="Help the user figure out what to pack based on the weather and their trip type.",
         chat_client=chat_client,
         tools=[get_packing_list, check_luggage_restrictions],
     )
@@ -128,11 +111,7 @@ def create_packing_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
 def create_activities_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
     return ChatAgent(
         name="activities_agent",
-        instructions=(
-            "You are a local travel guide. Use get_activities for destination suggestions "
-            "and get_local_tips for practical advice. Highlight top-rated options and hidden "
-            "gems. Tailor to weather if context is available. Be enthusiastic but concise."
-        ),
+        instructions="Suggest things to do at the destination. Use get_activities and get_local_tips.",
         chat_client=chat_client,
         tools=[get_activities, get_local_tips],
     )
@@ -141,12 +120,7 @@ def create_activities_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
 def create_booking_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
     return ChatAgent(
         name="booking_agent",
-        instructions=(
-            "You are a travel booking specialist. Use search_flights and search_hotels to "
-            "show options with prices and ratings. Highlight best value and premium options. "
-            "When asked to book, use book_flight or book_hotel and confirm the reference. "
-            "Always confirm details before booking."
-        ),
+        instructions="Help the user find and book flights and hotels.",
         chat_client=chat_client,
         tools=[search_flights, search_hotels, book_flight, book_hotel],
     )

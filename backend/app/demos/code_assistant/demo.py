@@ -1,21 +1,14 @@
 import os
 import sys
 
-# Add the parent directory to Python path to allow imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.insert(0, parent_dir)
 
-from code_assistant.orchestrator import orchestrator
+from code_assistant.runner import run_workflow
 
-def print_section_header(title: str):
-    print("\n" + "=" * 80)
-    print(f"  {title}")
-    print("=" * 80 + "\n")
 
-def run_demo():
-    # Sample code for testing
-    sample_code = """
+SAMPLE_CODE = """
 def calculate(x, y):
     return x + y
 
@@ -27,44 +20,86 @@ def process_data(items):
     return result
 """
 
-    print_section_header("CODE ASSISTANT ORCHESTRATOR DEMO")
-    print("Sample code to analyze:")
+LOG_FILE = "code_assistant/log/code_assistant.log"
+TRACE_DIR = "code_assistant/log/traces"
+
+
+def header(title: str) -> None:
+    print("\n" + "=" * 80)
+    print(f"  {title}")
+    print("=" * 80 + "\n")
+
+
+def run_demo():
+    header("CODE ASSISTANT DEMO — GRAPH WORKFLOW")
+    print("Sample code:")
     print("-" * 80)
-    print(sample_code)
+    print(SAMPLE_CODE)
     print("-" * 80)
+    print(f"Traces will be saved to: {TRACE_DIR}/\n")
 
-    # Test 1: Explanation request
-    print_section_header("TEST 1: Code Explanation Request")
-    print("User request: 'What does this code do?'\n")
-    orchestrator("What does this code do?", sample_code, stream=True)
+    # Test 1: Explain
+    header("TEST 1: Explain — 'What does this code do?'")
+    run_workflow(
+        user_request="What does this code do?",
+        code=SAMPLE_CODE,
+        mode="EXPLAIN",
+        log_file=LOG_FILE,
+        trace_dir=TRACE_DIR,
+    )
 
-    # Test 2: Refactoring request with specific goal
-    print_section_header("TEST 2: Code Refactoring Request")
-    print("User request: 'Refactor this code to improve readability and add type hints'\n")
-    orchestrator("Refactor this code to improve readability and add type hints", sample_code, stream=True)
+    # Test 2: Refactor
+    header("TEST 2: Refactor — 'Refactor this code to improve readability and add type hints'")
+    run_workflow(
+        user_request="Refactor this code to improve readability and add type hints",
+        code=SAMPLE_CODE,
+        mode="REFACTOR",
+        log_file=LOG_FILE,
+        trace_dir=TRACE_DIR,
+    )
 
-    # Test 3: Documentation request with style
-    print_section_header("TEST 3: Documentation Request")
-    print("User request: 'Add numpy-style docstrings to this code'\n")
-    orchestrator("Add numpy-style docstrings to this code", sample_code, stream=True)
+    # Test 3: Document
+    header("TEST 3: Document — 'Add numpy-style docstrings to this code'")
+    run_workflow(
+        user_request="Add numpy-style docstrings to this code",
+        code=SAMPLE_CODE,
+        mode="DOCUMENT",
+        log_file=LOG_FILE,
+        trace_dir=TRACE_DIR,
+    )
 
-    # Test 4: Multiple operations
-    print_section_header("TEST 4: Multiple Operations Request")
-    print("User request: 'Refactor this code and then add documentation'\n")
-    orchestrator("Refactor this code and then add documentation", sample_code, stream=True)
+    # Test 4: Refactor + Document
+    header("TEST 4: Refactor + Document — 'Refactor this code and then add documentation'")
+    run_workflow(
+        user_request="Refactor this code and then add documentation",
+        code=SAMPLE_CODE,
+        mode="REFACTOR_DOCUMENT",
+        log_file=LOG_FILE,
+        trace_dir=TRACE_DIR,
+    )
 
-    # Test 5: Natural language variation
-    print_section_header("TEST 5: Natural Language Variation")
-    print("User request: 'Can you help me understand what's going on here?'\n")
-    orchestrator("Can you help me understand what's going on here?", sample_code, stream=True)
+    # Test 5: Explain (natural language variation)
+    header("TEST 5: Explain — 'Can you help me understand what's going on here?'")
+    run_workflow(
+        user_request="Can you help me understand what's going on here?",
+        code=SAMPLE_CODE,
+        mode="EXPLAIN",
+        log_file=LOG_FILE,
+        trace_dir=TRACE_DIR,
+    )
 
-    # Test 6: Performance-focused refactoring
-    print_section_header("TEST 6: Performance-Focused Refactoring")
-    print("User request: 'Make this code more efficient'\n")
-    orchestrator("Make this code more efficient", sample_code, stream=True)
+    # Test 6: Refactor (performance focus)
+    header("TEST 6: Refactor — 'Make this code more efficient'")
+    run_workflow(
+        user_request="Make this code more efficient",
+        code=SAMPLE_CODE,
+        mode="REFACTOR",
+        log_file=LOG_FILE,
+        trace_dir=TRACE_DIR,
+    )
 
-    print_section_header("DEMO COMPLETE")
-    print("All test cases executed successfully! ✨\n")
+    header("DEMO COMPLETE")
+    print(f"Traces saved to: {TRACE_DIR}/\n")
 
 
 if __name__ == "__main__":
