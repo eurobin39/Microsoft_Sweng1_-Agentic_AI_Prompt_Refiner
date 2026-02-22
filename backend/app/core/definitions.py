@@ -1,63 +1,78 @@
-from agent_framework import tool, ChatAgent
+from agent_framework import ChatAgent, tool
 from agent_framework.azure import AzureOpenAIChatClient
 
+from app.services.judge_tools import save_evaluation_result
 from app.services.refiner_tools import save_refinement_result
 
 
-# ── Tools ──
-# Thin wrapper: expose tool to LLM; real logic lives in services/refiner_tools.py
+@tool(
+    name="store_evaluation_result",
+    description="Persist judge evaluation output to disk as an audit log.",
+)
+def store_evaluation_result(agent_name: str, score: float, summary: str) -> str:
+    return save_evaluation_result(agent_name, score, summary)
+
+
 @tool(
     name="store_refinement_result",
-    description="Persist the refinement result to disk as an audit log.",
+    description="Persist refiner output to disk as an audit log.",
 )
 def store_refinement_result(agent_name: str, refined_prompt: str, summary: str) -> str:
     return save_refinement_result(agent_name, refined_prompt, summary)
 
-@tool
-def store_refinement_result(result: dict) -> dict:
-    return store_refinement_result_service(result)
 
-# ── Agent Definitions ──
+JUDGE_SYSTEM_PROMPT = """
+You are a Judge Agent.
 
-JUDGE_SYSTEM_PROMPT = ""  # TODO:
+Evaluate the provided blueprint and traces, then return a JSON object:
+{
+  "score": <float between 0 and 1>,
+  "issues": ["..."],
+  "strengths": ["..."],
+  "summary": "..."
+}
+
+Guidelines:
+- Be strict and concrete.
+- Prefer actionable feedback over generic comments.
+- Return JSON only.
+"""
+
+
+REFINER_SYSTEM_PROMPT = """
+You are a Refiner Agent responsible for improving a system prompt (blueprint)
+based on structured feedback from a Judge Agent.
+
+Your task is to analyze the Judge evaluation and produce a refined,
+fully usable version of the original blueprint.
+
+Behavioral expectations:
+- Directly address issues identified in the judge output.
+- Produce actionable refinements.
+- Output a fully usable refined blueprint.
+- Avoid changing parts that already work well.
+- Maintain clarity and internal consistency.
+
+Return a valid JSON object with fields:
+- refined_prompt (string)
+- changes (list of objects containing: issue_reference, change_description, reasoning)
+- expected_impact (string)
+- summary (string)
+
+Respond with JSON only.
+"""
 
 
 def create_judge_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
-    # TODO:
-    raise NotImplementedError
-
-REFINER_SYSTEM_PROMPT = # TODO: Refiner team
-    REFINER_SYSTEM_PROMPT = 
-        """ 
-        You are a Refiner Agent responsible for improving a system prompt ("blueprint")
-        based on structured feedback from a Judge Agent.
-
-        Your task is to analyse the Judge’s EvaluationResult and produce a refined,
-        fully usable version of the original blueprint.
-
-        Behavioural Expectations:
-
-        - Directly address issues identified in the judge’s EvaluationResult
-        - Produce actionable refinements (not vague suggestions)
-        - Output a fully usable refined blueprint
-        - Avoid changing parts of the blueprint that were already functioning correctly
-        - Maintain clarity and internal consistency in the improved prompt
-
-        Output Requirements:
-
-        Return a valid JSON object matching the RefinementResult schema with the following fields:
-
-        - refined_prompt (string)
-        - changes (list of objects containing: issue_reference, change_description, reasoning)
-        - expected_impact (string)
-        - summary (string)
-
-        Respond with JSON only. Do not include additional commentary.
-        """
+    return ChatAgent(
+        name="judge_agent",
+        instructions=JUDGE_SYSTEM_PROMPT,
+        chat_client=chat_client,
+        tools=[store_evaluation_result],
+    )
 
 
 def create_refiner_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
-    # TODO: Refiner team
     return ChatAgent(
         name="refiner_agent",
         instructions=REFINER_SYSTEM_PROMPT,
