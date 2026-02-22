@@ -66,7 +66,8 @@ def save_refinement_result(
     logs_dir = Path("refinement_logs")
     logs_dir.mkdir(parents=True, exist_ok=True)
 
-    timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    now_utc = datetime.now(timezone.utc)
+    timestamp_str = now_utc.strftime("%Y%m%d_%H%M%S_%f")
 
     safe_agent = "".join(c for c in agent_name if c.isalnum() or c in ("-", "_")).strip()
     if not safe_agent:
@@ -76,7 +77,7 @@ def save_refinement_result(
 
     payload: Dict[str, Any] = {
         "agent_name": agent_name,
-        "timestamp_utc": timestamp_str,
+        "timestamp_utc": now_utc.isoformat(),
         "refined_prompt": refined_prompt,
         "summary": summary,
     }

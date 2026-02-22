@@ -1,3 +1,5 @@
+from typing import Any
+
 from agent_framework import ChatAgent, tool
 from agent_framework.azure import AzureOpenAIChatClient
 
@@ -17,8 +19,20 @@ def store_evaluation_result(agent_name: str, score: float, summary: str) -> str:
     name="store_refinement_result",
     description="Persist refiner output to disk as an audit log.",
 )
-def store_refinement_result(agent_name: str, refined_prompt: str, summary: str) -> str:
-    return save_refinement_result(agent_name, refined_prompt, summary)
+def store_refinement_result(
+    refined_prompt: str,
+    summary: str,
+    changes: list[dict[str, Any]] | None = None,
+    expected_impact: str | None = None,
+    agent_name: str = "refiner_agent",
+) -> str:
+    return save_refinement_result(
+        agent_name=agent_name,
+        refined_prompt=refined_prompt,
+        summary=summary,
+        changes=changes,
+        expected_impact=expected_impact,
+    )
 
 
 JUDGE_SYSTEM_PROMPT = """
@@ -58,6 +72,13 @@ Return a valid JSON object with fields:
 - changes (list of objects containing: issue_reference, change_description, reasoning)
 - expected_impact (string)
 - summary (string)
+
+After generating the JSON, call the tool `store_refinement_result` with:
+- agent_name = "refiner_agent"
+- refined_prompt = JSON.refined_prompt
+- summary = JSON.summary
+- changes = JSON.changes
+- expected_impact = JSON.expected_impact
 
 Respond with JSON only.
 """
