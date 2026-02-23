@@ -93,6 +93,33 @@ class EvaluationCriteria(BaseModel):
     priority_description: str | None = Field(None, description="What matters most / trade-offs")
 
 
+class RefinementChange(BaseModel):
+    """
+    Represents a single modification applied to the blueprint.
+    additionalProperties: false -> forbid extras.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    issue_reference: str = Field(..., description="Reference to the issue identified by the judge")
+    change_description: str = Field(..., description="Description of what was changed in the blueprint")
+    reasoning: str = Field(..., description="Explanation of why this change was necessary")
+
+class RefinementResult(BaseModel):
+    """
+    Structured output produced by the refiner.
+    JSON-serialisable and enforces a strict schema.
+    additionalProperties: false -> forbid extras.
+    """
+    model_config = ConfigDict(extra="forbid")
+
+    refined_prompt: str = Field(..., description="Final improved version of the system prompt or blueprint")
+    changes: List[RefinementChange] = Field(
+        ..., description="List of modifications applied to the original blueprint"
+    )
+    expected_impact: str = Field(..., description="How the refinement improves performance")
+    summary: str = Field(..., description="High-level summary of refinement rationale")
+
+
 class AgentBlueprint(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -110,8 +137,7 @@ class AgentBlueprint(BaseModel):
 #wrapper for FastAPI router
 class EvaluationRequest(BaseModel):
     blueprint: AgentBlueprint #agent info, test cases, etc.
-    traces: list[TraceLog] #log model 
-
+    traces: list[TraceLog] #log model
 
 
 class TestCaseResult(BaseModel):
@@ -121,6 +147,7 @@ class TestCaseResult(BaseModel):
     passed: bool = Field(..., description="True if the agent passed the test criteria")
     reasoning: str = Field(..., description="Explanation of why this score was given")
     issues: List[str] = Field(default_factory=list, description="List of specific failures or bugs found")
+
 
 class EvaluationResult(BaseModel):
     """ Overall evaluation result returned by the Judge """
