@@ -2,6 +2,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Dict, List
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from app.models.trace_logs import TraceLog
 
 
 class Provider(str, Enum):
