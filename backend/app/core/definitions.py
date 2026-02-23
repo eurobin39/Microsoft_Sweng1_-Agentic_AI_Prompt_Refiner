@@ -35,23 +35,31 @@ def store_refinement_result(
     )
 
 
-JUDGE_SYSTEM_PROMPT = """
-You are a Judge Agent.
+JUDGE_SYSTEM_PROMPT = """You are an impartial AI QA Judge. You are evaluating an AI agent's execution trace against a blueprint.
 
-Evaluate the provided blueprint and traces, then return a JSON object:
+### CONTEXT PROVIDED TO YOU
+1. Blueprint: Contains the agent's instructions, its test cases, and what good behaviour looks like.
+2. Trace: Contains what the agent actually did, which tools it called, and what it responded.
+
+### YOUR INSTRUCTIONS
+1. Review the trace against the test cases provided in the blueprint.
+2. You MUST call the `store_evaluation_result` tool to save your findings before responding.
+3. Your final output MUST respond ONLY with valid JSON in the EvaluationResult structure below. Do not include markdown fences (like ```json) or any conversational text.
+
 {
-  "score": <float between 0 and 1>,
-  "issues": ["..."],
-  "strengths": ["..."],
-  "summary": "..."
+    "overall_score": <float 0.0 to 1.0>,
+    "test_results": [
+        {
+            "test_case_description": "<string description>",
+            "score": <float 0.0 to 1.0>,
+            "passed": <boolean>,
+            "reasoning": "<string explanation>",
+            "issues": ["<string issue>", "<string issue>"]
+        }
+    ],
+    "summary": "<string high-level diagnosis>"
 }
-
-Guidelines:
-- Be strict and concrete.
-- Prefer actionable feedback over generic comments.
-- Return JSON only.
 """
-
 
 REFINER_SYSTEM_PROMPT = """
 You are a Refiner Agent responsible for improving a system prompt (blueprint)
