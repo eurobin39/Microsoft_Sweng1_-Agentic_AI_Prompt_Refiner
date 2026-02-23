@@ -1,28 +1,35 @@
-
-from datetime import datetime
-import os
 import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def save_evaluation_result(agent_name: str, score: float, summary: str) -> bool:
-    folder = "./evaluation_logs" #could be unsafe?
-    file_name = agent_name + datetime.now().isoformat() + ".json"
-    file_path = os.path.join(folder, file_name) 
+    logs_dir = Path("evaluation_logs")
+
+    now_utc = datetime.now(timezone.utc)
+    timestamp_str = now_utc.strftime("%Y%m%d_%H%M%S_%f")
+
+    safe_agent = "".join(c for c in agent_name if c.isalnum() or c in ("-", "_")).strip()
+    if not safe_agent:
+        safe_agent = "judge"
+
+    filepath = logs_dir / f"{safe_agent}_{timestamp_str}.json"
+
     data = {
-        "agent" : agent_name,
-        "agent_score " : score,
-        "retrieved_at: " : datetime.now().isoformat(),
-        "Summary_result" : summary
+        "agent_name": agent_name,
+        "timestamp_utc": now_utc.isoformat(),
+        "agent_score": score,
+        "summary": summary,
     }
+
     try:
-        with open(file_path, "w") as f:
-            json.dump(data, f, indent=2)
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
         return True
-    except Exception as e:
+    except Exception:
+        logger.exception("Failed to write evaluation log to %s", filepath)
         return False
-
-
-
-
-
- 
