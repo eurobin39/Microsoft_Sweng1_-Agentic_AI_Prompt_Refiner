@@ -11,7 +11,7 @@ from app.services.refiner_tools import save_refinement_result
     name="store_evaluation_result",
     description="Persist judge evaluation output to disk as an audit log.",
 )
-def store_evaluation_result(agent_name: str, score: float, summary: str) -> str:
+def store_evaluation_result(agent_name: str, score: float, summary: str) -> bool:
     return save_evaluation_result(agent_name, score, summary)
 
 
