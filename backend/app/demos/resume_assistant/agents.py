@@ -14,8 +14,8 @@ def _get_collector():
         _agent_collector = create_agent(
             name="resume_info_collector",
             instructions=(
-                "Pull out the person's info from their resume. "
-                "Return as JSON with name, education, skills, experience, projects."
+                "Extract a structured candidate profile from the resume. "
+                "Return valid JSON with full_name, contact, summary, education, skills, experience, projects, certifications."
             ),
         )
     return _agent_collector
@@ -27,7 +27,8 @@ def _get_analyzer():
         _agent_analyzer = create_agent(
             name="resume_job_analyzer",
             instructions=(
-                "Read the job description and extract the key requirements. Return as JSON."
+                "Analyze the job description to identify required skills, qualifications, and responsibilities. "
+                "Return structured JSON with required, preferred, and role-summary fields."
             ),
         )
     return _agent_analyzer
@@ -39,7 +40,8 @@ def _get_writer():
         _agent_writer = create_agent(
             name="resume_writer",
             instructions=(
-                "Write a resume based on the person's profile and the job they're applying for."
+                "Draft a tailored, ATS-friendly resume based on the candidate profile and job analysis. "
+                "Use bold section headings (Summary, Experience, Education, Skills, Projects) and keep it concise."
             ),
         )
     return _agent_writer
@@ -51,8 +53,8 @@ def _get_reviewer():
         _agent_reviewer = create_agent(
             name="resume_reviewer",
             instructions=(
-                "Review the resume against the job requirements. "
-                "Give a score out of 10 and list what's good and what needs improving."
+                "Compare the resume output with job requirements and rate alignment 0-10. "
+                "List strengths, gaps, and concrete edits to match the role better."
             ),
         )
     return _agent_reviewer

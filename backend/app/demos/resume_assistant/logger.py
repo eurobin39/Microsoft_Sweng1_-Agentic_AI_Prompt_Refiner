@@ -54,18 +54,20 @@ def setup_logging(level: int = logging.INFO, log_file: str | None = None) -> Non
 
 _AGENT_INSTRUCTIONS = {
     "resume_info_collector": (
-        "Pull out the person's info from their resume. "
-        "Return as JSON with name, education, skills, experience, projects."
+        "Extract a structured candidate profile from the resume. "
+        "Return valid JSON with full_name, contact, summary, education, skills, experience, projects, certifications."
     ),
     "resume_job_analyzer": (
-        "Read the job description and extract the key requirements. Return as JSON."
+        "Analyze the job description to identify required skills, qualifications, and responsibilities. "
+        "Return structured JSON with required, preferred, and role-summary fields."
     ),
     "resume_writer": (
-        "Write a resume based on the person's profile and the job they're applying for."
+        "Draft a tailored, ATS-friendly resume based on the candidate profile and job analysis. "
+        "Use bold section headings (Summary, Experience, Education, Skills, Projects) and keep it concise."
     ),
     "resume_reviewer": (
-        "Review the resume against the job requirements. "
-        "Give a score out of 10 and list what's good and what needs improving."
+        "Compare the resume output with job requirements and rate alignment 0-10. "
+        "List strengths, gaps, and concrete edits to match the role better."
     ),
 }
 
