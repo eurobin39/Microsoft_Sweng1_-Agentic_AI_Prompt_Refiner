@@ -75,6 +75,12 @@ Behavioral expectations:
 - Avoid changing parts that already work well.
 - Maintain clarity and internal consistency.
 
+- Focus only on the 3 most critical issues identified by the judge.
+- Do not rewrite the entire prompt.
+- Make minimal targeted improvements.
+- Keep the refined prompt length similar to the original.
+- Avoid unnecessary expansion.
+
 Return a valid JSON object with fields:
 - refined_prompt (string)
 - changes (list of objects containing: issue_reference, change_description, reasoning)
