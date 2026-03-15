@@ -20,6 +20,7 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+backend/evaluation_logs/
 
 # Virtual environments
 venv/

@@ -10,7 +10,6 @@ load_dotenv()
 from fastapi import FastAPI
 from app.api.routes import health, evaluation
 
-from app.api.routes import resume_demo
 
 app = FastAPI(
     title="Agentic AI Prompt Refiner",
@@ -18,7 +17,6 @@ app = FastAPI(
 )
 
 app.include_router(health.router, prefix="/api", tags=["health"])
-app.include_router(resume_demo.router, prefix="/api/v1", tags=["Resume Demo"])
 app.include_router(evaluation.router, prefix="/api/v1", tags=["Evaluation"])
 
 
