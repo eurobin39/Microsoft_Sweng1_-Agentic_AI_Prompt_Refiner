@@ -4,7 +4,8 @@ from agent_framework.azure import AzureOpenAIChatClient
 from azure.identity import AzureCliCredential
 from dotenv import load_dotenv
 
-from app.models.models import AgentBlueprint
+
+from app.models.models import AgentBlueprint, EvaluationResult
 from app.models.trace_logs import TraceLog
 from .workflow import build_refinement_workflow
 
@@ -29,6 +30,19 @@ def get_chat_client() -> AzureOpenAIChatClient:
     )
 
 
-async def run_evaluation(blueprint: AgentBlueprint, traces: list[TraceLog]):
-    # TODO: build workflow, pass blueprint + traces as input, return EvaluationResult
-    pass
+async def run_evaluation(blueprint: AgentBlueprint, traces: list[TraceLog]) -> EvaluationResult:
+    # 1. Get client and build workflow
+    chat_client = get_chat_client()
+    workflow = build_refinement_workflow(chat_client)
+    
+    # 2. Serialize inputs to dicts for the workflow payload
+    payload = {
+        "blueprint": blueprint.model_dump(),
+        "traces": [trace.model_dump() for trace in traces]
+    }
+    
+    # 3. Invoke the workflow and await the result
+    result = await workflow.invoke(payload)
+    
+    # 4. Parse the raw dictionary back into an EvaluationResult
+    return EvaluationResult(**result)
