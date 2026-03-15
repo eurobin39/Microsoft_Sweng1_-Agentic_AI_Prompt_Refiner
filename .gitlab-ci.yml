@@ -19,7 +19,7 @@ backend-route-smoke:
     - grep -nE 'include_router\(health\.router, prefix="/api"' backend/app/main.py
     - grep -nE 'include_router\(evaluation\.router, prefix="/api/v1"' backend/app/main.py
     - grep -nE '@router\.get\("/health"\)' backend/app/api/routes/health.py
-    - grep -nE '@router\.post\("/evaluate"\)' backend/app/api/routes/evaluation.py
+    - grep -nE '@router\.post\("/evaluate"' backend/app/api/routes/evaluation.py
     - python3 -m py_compile backend/app/main.py backend/app/api/routes/health.py backend/app/api/routes/evaluation.py
 
 schema-smoke:

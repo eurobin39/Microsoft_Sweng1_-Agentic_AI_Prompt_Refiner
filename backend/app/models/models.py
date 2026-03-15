@@ -155,3 +155,10 @@ class EvaluationResult(BaseModel):
     overall_score: float = Field(..., ge=0.0, le=1.0, description="Aggregate score across all test cases")
     test_results: List[TestCaseResult] = Field(..., description="Detailed results for each test case")
     summary: str = Field(..., description="High-level diagnosis of the agent's performance")
+
+
+class EvaluationResponse(BaseModel):
+    """ Envelope returned by POST /evaluate — always contains the judge result,
+        and optionally the refiner output when overall_score < 0.7. """
+    evaluation: EvaluationResult = Field(..., description="Judge evaluation result")
+    refinement: RefinementResult | None = Field(None, description="Refiner output (present when overall_score < 0.7)")
