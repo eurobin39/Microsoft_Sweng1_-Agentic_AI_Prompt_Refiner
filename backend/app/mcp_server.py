@@ -1,25 +1,32 @@
 from __future__ import annotations
 
+import argparse
+import os
 from typing import Any, TypedDict
+
+from copilot_prompt_refiner.ingest.copilot import build_case_from_payload
+from copilot_prompt_refiner.pipeline import PromptRefinementPipeline
 
 
 class _EvidencePayloadSchema(TypedDict):
-    """Required evidence fields used by the MCP payload.."""
+    """Required evidence keys accepted by MCP tools."""
 
     logs: Any | None
     ground_truth_content: Any | None
 
 
 class PayloadInputSchema(_EvidencePayloadSchema, total=False):
-    """Schema used by MCP tools for payload ingestion."""
+    """Schema used by MCP tools for payload ingestion.
+
+    `logs` and `ground_truth_content` are required-at-shape fields but can be
+    `null` to represent missing files/artifacts.
+    """
 
     workspace: str
-    agent_description: str
     system_prompt: str
     definition_py_content: str
     prompt_sources: Any
     files: Any
-    tools: Any
     user_input: str
     copilot_user_input: str
     require_user_input: bool | str | int
@@ -33,17 +40,134 @@ class PayloadInputSchema(_EvidencePayloadSchema, total=False):
     max_iters: int | str | float
 
 
+def _as_bool(value: Any, default: bool = True) -> bool:
+    """Coerce loosely typed payload values into a boolean flag.
+
+    MCP clients often send strings/numbers for booleans, so this helper keeps
+    CLI and server behavior consistent across transports.
+    """
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return default
+
+
+def _as_int(value: Any, default: int | None = None) -> int | None:
+    """Coerce payload values into an optional integer.
+
+    Invalid values return the provided default so iteration and limit fields
+    can be safely consumed without additional caller-side guards.
+    """
+    if value is None:
+        return default
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return default
+        try:
+            return int(text)
+        except ValueError:
+            return default
+    return default
+
+
+def _context_prompt_sources(context: dict[str, Any] | None) -> list[dict[str, str]]:
+    """Convert `context.current_system_prompts` into synthetic prompt source files.
+
+    This compatibility path lets multi-agent payloads be ingested through the
+    same prompt-discovery pipeline as normal `prompt_sources`.
+    """
+    if not isinstance(context, dict):
+        return []
+
+    current_prompts = context.get("current_system_prompts")
+    if not isinstance(current_prompts, dict):
+        return []
+
+    sources: list[dict[str, str]] = []
+    for agent_name, prompt_text in current_prompts.items():
+        if not isinstance(prompt_text, str) or not prompt_text.strip():
+            continue
+        name = str(agent_name).strip() or "agent"
+        escaped = prompt_text.replace('"""', '\\"""').strip()
+        sources.append(
+            {
+                "path": f"context/{name}/definition.py",
+                "content": f'SYSTEM_PROMPT = """{escaped}"""',
+            }
+        )
+    return sources
+
+
+def _context_system_prompt(context: dict[str, Any] | None) -> str | None:
+    """Derive one composed system prompt from context when direct prompt is absent.
+
+    The output is intentionally structured by agent section to preserve source
+    attribution while still fitting single-prompt evaluation interfaces.
+    """
+    if not isinstance(context, dict):
+        return None
+
+    direct_prompt = context.get("system_prompt")
+    if isinstance(direct_prompt, str) and direct_prompt.strip():
+        return direct_prompt.strip()
+
+    current_prompts = context.get("current_system_prompts")
+    if not isinstance(current_prompts, dict):
+        return None
+
+    sections: list[str] = []
+    for agent_name, prompt_text in current_prompts.items():
+        if not isinstance(prompt_text, str) or not prompt_text.strip():
+            continue
+        name = str(agent_name).strip() or "agent"
+        sections.append(f"## {name}\n{prompt_text.strip()}")
+
+    if not sections:
+        return None
+
+    return "You are refining a multi-agent system prompt set.\n\n" + "\n\n".join(sections)
+
+
+def _merge_prompt_sources(
+    primary: Any,
+    extras: list[dict[str, str]],
+) -> Any:
+    """Merge normalized prompt-source extras into a possibly heterogeneous base value.
+
+    This keeps original caller shape when possible while ensuring context-derived
+    sources participate in downstream prompt candidate extraction.
+    """
+    if not extras:
+        return primary
+    if primary is None:
+        return extras
+    if isinstance(primary, list):
+        return [*primary, *extras]
+    return [primary, *extras]
+
+
 def _normalize_payload_shape(payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
-    """Fill missing optional fields so the MCP payload shape stays stable."""
+    """Fill missing optional fields so MCP payload schema remains stable.
+
+    Shape metadata records whether values were provided or auto-filled, which
+    helps debug client interoperability without rejecting partial payloads.
+    """
     normalized = dict(payload)
     shape_status: dict[str, str] = {}
-
     defaults: dict[str, Any] = {
         "logs": None,
         "ground_truth_content": None,
         "log_sources": [],
-        "tools": [],
-        "metadata": {},
     }
 
     for key, default_value in defaults.items():
@@ -66,52 +190,25 @@ def _normalize_payload_shape(payload: dict[str, Any]) -> tuple[dict[str, Any], d
     return normalized, shape_status
 
 
-def _as_bool(value: Any, default: bool = True) -> bool:
-    """Coerce loosely typed payload values into a boolean flag."""
-    if value is None:
-        return default
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return default
-
-
-def _as_int(value: Any, default: int | None = None) -> int | None:
-    """Coerce payload values into an optional integer."""
-    if value is None:
-        return default
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return default
-        try:
-            return int(text)
-        except ValueError:
-            return default
-    return default
-
-
 def _to_payload_case(payload: PayloadInputSchema | dict[str, Any] | None):
-    """Normalize incoming tool payload before deeper case construction."""
+    """Normalize incoming tool payload and resolve a unified `AgentCase`.
+
+    This function handles field aliases, nested payload wrappers, and context
+    fallbacks so all MCP tools share one robust ingestion path.
+    """
     if payload is None:
         payload = {}
-
     if not isinstance(payload, dict):
         raise ValueError("payload_input must be a JSON object.")
 
-    # Some clients wrap the actual payload as {"payload_input": {...}}
     nested_payload = payload.get("payload_input")
     if isinstance(nested_payload, dict):
         payload = nested_payload
-
     payload, payload_shape = _normalize_payload_shape(payload)
+
+    context_files = payload.get("context_files")
+    if context_files is not None and not isinstance(context_files, list):
+        raise ValueError("context_files must be a list of strings.")
 
     metadata_raw = payload.get("metadata")
     if metadata_raw is not None and not isinstance(metadata_raw, dict):
@@ -124,6 +221,22 @@ def _to_payload_case(payload: PayloadInputSchema | dict[str, Any] | None):
         raise ValueError("context must be an object when provided.")
     context_obj: dict[str, Any] | None = context if isinstance(context, dict) else None
 
+    prompt_sources = payload.get("prompt_sources")
+    if prompt_sources is None:
+        prompt_sources = payload.get("files")
+    if prompt_sources is None and context_obj is not None:
+        prompt_sources = context_obj.get("prompt_sources") or context_obj.get("files")
+    prompt_sources = _merge_prompt_sources(
+        primary=prompt_sources,
+        extras=_context_prompt_sources(context_obj),
+    )
+
+    log_sources = payload.get("log_sources")
+    if log_sources is None:
+        log_sources = payload.get("logs_files")
+    if log_sources is None and context_obj is not None:
+        log_sources = context_obj.get("log_sources") or context_obj.get("logs_files")
+
     user_input = payload.get("user_input")
     if not isinstance(user_input, str) or not user_input.strip():
         alt_user_input = payload.get("copilot_user_input")
@@ -132,8 +245,205 @@ def _to_payload_case(payload: PayloadInputSchema | dict[str, Any] | None):
         elif context_obj is not None and isinstance(context_obj.get("user_input"), str):
             user_input = context_obj.get("user_input")
         else:
-            if _as_bool(payload.get("require_user_input"), True):
-                raise ValueError("Missing required field: user_input")
-            user_input = ""
+            user_input = None
 
-    return payload, payload_shape, metadata, context_obj, user_input
+    system_prompt = payload.get("system_prompt")
+    if not (isinstance(system_prompt, str) and system_prompt.strip()):
+        system_prompt = _context_system_prompt(context_obj)
+
+    definition_py_content = payload.get("definition_py_content")
+    if not (
+        isinstance(definition_py_content, str) and definition_py_content.strip()
+    ) and context_obj is not None:
+        maybe_definition = context_obj.get("definition_py_content")
+        if isinstance(maybe_definition, str):
+            definition_py_content = maybe_definition
+
+    logs = payload.get("logs")
+    if logs is None and context_obj is not None:
+        logs = context_obj.get("logs")
+
+    ground_truth = payload.get("ground_truth")
+    if ground_truth is None and context_obj is not None:
+        ground_truth = context_obj.get("ground_truth")
+
+    ground_truth_content = payload.get("ground_truth_content")
+    if ground_truth_content is None and context_obj is not None:
+        ground_truth_content = context_obj.get("ground_truth_content")
+
+    return build_case_from_payload(
+        workspace=payload.get("workspace") or ".",
+        system_prompt=system_prompt,
+        definition_py_content=definition_py_content,
+        prompt_sources=prompt_sources,
+        user_input=user_input,
+        require_user_input=_as_bool(payload.get("require_user_input"), True),
+        ground_truth=ground_truth,
+        ground_truth_content=ground_truth_content,
+        logs=logs,
+        log_sources=log_sources,
+        context_files=context_files,
+        case_id=payload.get("case_id"),
+        metadata=metadata,
+    )
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    """Build CLI parser for running the MCP server in different transports.
+
+    Options mirror env vars so local dev, container deploys, and remote setups
+    can use the same entrypoint with minimal wrapper scripts.
+    """
+    parser = argparse.ArgumentParser(
+        prog="prompt-refiner-mcp",
+        description="Run Copilot Prompt Refiner MCP server.",
+    )
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default=os.getenv("PROMPT_REFINER_MCP_TRANSPORT", "stdio"),
+        help="MCP transport (stdio for local tool runner, streamable-http/sse for remote).",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.getenv("PROMPT_REFINER_MCP_HOST", "127.0.0.1"),
+        help="Host for HTTP/SSE transports.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=int(os.getenv("PROMPT_REFINER_MCP_PORT", "8000")),
+        help="Port for HTTP/SSE transports.",
+    )
+    parser.add_argument(
+        "--mount-path",
+        default=os.getenv("PROMPT_REFINER_MCP_MOUNT_PATH", "/"),
+        help="Mount path used by SSE transport.",
+    )
+    parser.add_argument(
+        "--streamable-http-path",
+        default=os.getenv("PROMPT_REFINER_MCP_STREAMABLE_HTTP_PATH", "/mcp"),
+        help="Streamable HTTP endpoint path.",
+    )
+    parser.add_argument(
+        "--sse-path",
+        default=os.getenv("PROMPT_REFINER_MCP_SSE_PATH", "/sse"),
+        help="SSE endpoint path.",
+    )
+    parser.add_argument(
+        "--message-path",
+        default=os.getenv("PROMPT_REFINER_MCP_MESSAGE_PATH", "/messages/"),
+        help="SSE message endpoint path.",
+    )
+    parser.add_argument(
+        "--stateless-http",
+        default=os.getenv("PROMPT_REFINER_MCP_STATELESS_HTTP", "true"),
+        choices=["true", "false", "1", "0", "yes", "no", "on", "off"],
+        help=(
+            "Use stateless Streamable HTTP mode (no session id required). "
+            "Recommended for broad MCP client compatibility."
+        ),
+    )
+    parser.add_argument(
+        "--log-level",
+        default=os.getenv("PROMPT_REFINER_MCP_LOG_LEVEL", "INFO"),
+        choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
+        help="MCP server log level.",
+    )
+    return parser
+
+
+def main(argv: list[str] | None = None) -> None:
+    """Start MCP server, register tools, and dispatch selected transport mode.
+
+    The server builds one default refinement pipeline instance and exposes
+    discovery/evaluate/refine/run tools over FastMCP.
+    """
+    args = _build_parser().parse_args(argv)
+
+    try:
+        from mcp.server.fastmcp import FastMCP
+    except Exception as exc:
+        raise RuntimeError(
+            "MCP SDK is not installed. Install with: pip install -e .[mcp]"
+        ) from exc
+
+    pipeline = PromptRefinementPipeline.default()
+    mcp = FastMCP(
+        "copilot-prompt-refiner",
+        host=args.host,
+        port=args.port,
+        mount_path=args.mount_path,
+        sse_path=args.sse_path,
+        message_path=args.message_path,
+        streamable_http_path=args.streamable_http_path,
+        stateless_http=_as_bool(args.stateless_http, True),
+        log_level=args.log_level,
+    )
+
+    @mcp.tool()
+    def discover_case_input(payload_input: PayloadInputSchema | None = None) -> dict[str, Any]:
+        """Inspect payload resolution results without running judge/refine logic.
+
+        Useful for client-side debugging because it shows resolved prompt/input
+        fields and discovery metadata before expensive model calls.
+        """
+        case = _to_payload_case(payload_input)
+        return {
+            "case_input": {
+                "case_id": case.case_id,
+                "system_prompt": case.system_prompt,
+                "user_input": case.user_input,
+                "ground_truth": case.ground_truth,
+                "log_count": len(case.logs),
+                "context_files": case.context_files,
+            },
+            "metadata": case.metadata,
+        }
+
+    @mcp.tool()
+    def evaluate_prompt(payload_input: PayloadInputSchema | None = None) -> dict[str, Any]:
+        """Return Judge evaluation artifacts for a resolved payload case.
+
+        This is the read-only scoring endpoint for workflows that want verdicts
+        and action recommendations without applying prompt mutations.
+        """
+        case = _to_payload_case(payload_input)
+        result = pipeline.evaluate(case)
+        return result.to_dict()
+
+    @mcp.tool()
+    def refine_prompt(payload_input: PayloadInputSchema | None = None) -> dict[str, Any]:
+        """Run a single judge+refine pass and return the resulting prompt revision.
+
+        Use this endpoint when iterative convergence is unnecessary and a single
+        targeted patch is sufficient for the calling workflow.
+        """
+        case = _to_payload_case(payload_input)
+        result = pipeline.refine(case)
+        return result.to_dict()
+
+    @mcp.tool()
+    def run_refinement_pipeline(
+        payload_input: PayloadInputSchema | None = None,
+    ) -> dict[str, Any]:
+        """Run iterative evaluate/refine loop and return full pipeline artifacts.
+
+        Includes final judge output, latest revision, iteration traces, and stop
+        reason so clients can inspect convergence and residual risk.
+        """
+        case = _to_payload_case(payload_input)
+        result = pipeline.run(
+            case,
+            max_iters=_as_int((payload_input or {}).get("max_iters")),
+        )
+        return result.to_dict()
+
+    mcp.run(
+        transport=args.transport,
+        mount_path=args.mount_path if args.transport == "sse" else None,
+    )
+
+
+if __name__ == "__main__":
+    main()
