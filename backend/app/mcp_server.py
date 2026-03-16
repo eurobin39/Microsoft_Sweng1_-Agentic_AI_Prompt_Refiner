@@ -58,7 +58,7 @@ def _as_bool(value: Any, default: bool = True) -> bool:
 
 
 def _as_int(value: Any, default: int | None = None) -> int | None:
-    """Coerce payload values into an optional integer.
+    """Coerce payload values into an optional integer..
 
     Invalid values return the provided default so iteration and limit fields
     can be safely consumed without additional caller-side guards.
