@@ -29,5 +29,16 @@ def get_chat_client() -> AzureOpenAIChatClient:
     )
 
 
-async def run_evaluation(blueprint: AgentBlueprint, traces: list[TraceLog]):
+async def run_refinement_pipeline(blueprint: AgentBlueprint, traces: list[TraceLog]):
     # TODO: build workflow, pass blueprint + traces as input, return EvaluationResult
+
+    chat_client = get_chat_client()
+    workflow = build_refinement_workflow(chat_client)
+
+    input_payload = {
+        "blueprint": blueprint,
+        "traces": traces
+    }
+
+    result = await workflow.run(input_payload)
+    return result
