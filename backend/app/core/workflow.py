@@ -15,4 +15,12 @@ def build_refinement_workflow(chat_client: AzureOpenAIChatClient):
         .build()
     )
 
+    workflow = (
+        WorkflowBuilder(start_executor=judge)
+        .add_edge(judge, refiner, 
+            condition=lambda msg: msg.get("overall_score", 1.0) < 0.7
+        )
+    .build()
+)
+
     return workflow

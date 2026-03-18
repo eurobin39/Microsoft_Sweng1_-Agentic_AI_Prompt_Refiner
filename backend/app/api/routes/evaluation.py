@@ -9,12 +9,16 @@ from app.core.runner import run_refinement_pipeline
 
 router = APIRouter()
 
+async def run_pipeline(request: EvaluationRequest):
+    blueprint = request.blueprint
+    traces = request.traces
+    return await run_refinement_pipeline(blueprint, traces)
 
 @router.post("/evaluate")
 async def evaluate(request: EvaluationRequest):
+    return await run_pipeline(request)
 
-    blueprint = request.blueprint
-    traces = request.traces
-    result = await run_refinement_pipeline(blueprint, traces)
-    
-    return result
+
+@router.post("/evaluate/sync")
+async def evaluate_sync(request: EvaluationRequest):
+    return await run_pipeline(request)

@@ -36,8 +36,8 @@ async def run_refinement_pipeline(blueprint: AgentBlueprint, traces: list[TraceL
     workflow = build_refinement_workflow(chat_client)
 
     input_payload = {
-        "blueprint": blueprint,
-        "traces": traces
+        "blueprint": blueprint.model_dump(),
+        "traces": [t.model_dump() for t in traces]
     }
 
     result = await workflow.run(input_payload)
