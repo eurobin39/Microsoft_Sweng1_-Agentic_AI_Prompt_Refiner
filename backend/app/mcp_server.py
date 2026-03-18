@@ -1,365 +1,336 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
-from typing import Any, TypedDict
+from typing import Any
 
-from copilot_prompt_refiner.ingest.copilot import build_case_from_payload
-from copilot_prompt_refiner.pipeline import PromptRefinementPipeline
+from typing_extensions import TypedDict
 
+from agent_framework.azure import AzureOpenAIChatClient
+from azure.identity import AzureCliCredential
 
-class _EvidencePayloadSchema(TypedDict):
-    """Required evidence keys accepted by MCP tools."""
+from backend.app.core.definitions import create_judge_agent, create_refiner_agent
 
+class MCPPayload(TypedDict, total=False):
+    assistant_name: str
+    workspace: str
+    user_input: str
+    system_prompt: str
+    blueprint: Any
+    trace: Any
     logs: Any | None
     ground_truth_content: Any | None
-
-
-class PayloadInputSchema(_EvidencePayloadSchema, total=False):
-    """Schema used by MCP tools for payload ingestion.
-
-    `logs` and `ground_truth_content` are required-at-shape fields but can be
-    `null` to represent missing files/artifacts.
-    """
-
-    workspace: str
-    system_prompt: str
-    definition_py_content: str
-    prompt_sources: Any
-    files: Any
-    user_input: str
-    copilot_user_input: str
-    require_user_input: bool | str | int
-    ground_truth: str
-    log_sources: Any
-    logs_files: Any
-    context_files: list[str]
-    case_id: str
-    metadata: dict[str, Any]
     context: dict[str, Any]
+    metadata: dict[str, Any]
+    case_id: str
     max_iters: int | str | float
 
 
-def _as_bool(value: Any, default: bool = True) -> bool:
-    """Coerce loosely typed payload values into a boolean flag.
-
-    MCP clients often send strings/numbers for booleans, so this helper keeps
-    CLI and server behavior consistent across transports.
-    """
+def _coerce_int(value: Any, fallback: int = 1) -> int:
     if value is None:
-        return default
+        return fallback
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return fallback
+    return fallback
+
+
+def _coerce_bool(value: Any, fallback: bool = True) -> bool:
+    if value is None:
+        return fallback
     if isinstance(value, bool):
         return value
     if isinstance(value, (int, float)):
         return bool(value)
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "on"}
-    return default
+    return fallback
 
 
-def _as_int(value: Any, default: int | None = None) -> int | None:
-    """Coerce payload values into an optional integer..
-
-    Invalid values return the provided default so iteration and limit fields
-    can be safely consumed without additional caller-side guards.
-    """
+def _ensure_object(value: Any, field_name: str) -> dict[str, Any]:
     if value is None:
-        return default
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError(f"{field_name} must be an object.")
+    return dict(value)
+
+
+def _ensure_request(payload_input: MCPPayload | dict[str, Any] | None) -> dict[str, Any]:
+    if payload_input is None:
+        raw: dict[str, Any] = {}
+    elif isinstance(payload_input, dict):
+        raw = dict(payload_input)
+    else:
+        raise ValueError("payload_input must be a JSON object.")
+
+    nested = raw.get("payload_input")
+    if isinstance(nested, dict):
+        raw = dict(nested)
+
+    metadata = _ensure_object(raw.get("metadata"), "metadata")
+    context = _ensure_object(raw.get("context"), "context")
+
+    request = {
+        "assistant_name": str(raw.get("assistant_name") or context.get("project") or "unknown_assistant"),
+        "workspace": raw.get("workspace") or ".",
+        "user_input": raw.get("user_input") or context.get("user_input") or "",
+        "system_prompt": raw.get("system_prompt") or context.get("system_prompt") or "",
+        "blueprint": raw.get("blueprint"),
+        "trace": raw.get("trace"),
+        "logs": raw.get("logs"),
+        "ground_truth_content": raw.get("ground_truth_content"),
+        "context": context,
+        "metadata": metadata,
+        "case_id": raw.get("case_id"),
+        "max_iters": _coerce_int(raw.get("max_iters"), 1),
+    }
+
+    return request
+
+
+def _stringify(value: Any) -> str:
+    if value is None:
+        return ""
     if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return default
-        try:
-            return int(text)
-        except ValueError:
-            return default
-    return default
+        return value
+    try:
+        return json.dumps(value, indent=2, ensure_ascii=False)
+    except TypeError:
+        return str(value)
 
 
-def _context_prompt_sources(context: dict[str, Any] | None) -> list[dict[str, str]]:
-    """Convert `context.current_system_prompts` into synthetic prompt source files.
+def _resolve_blueprint_text(request: dict[str, Any]) -> str:
+    explicit_blueprint = request.get("blueprint")
+    if explicit_blueprint is not None:
+        return _stringify(explicit_blueprint).strip()
 
-    This compatibility path lets multi-agent payloads be ingested through the
-    same prompt-discovery pipeline as normal `prompt_sources`.
-    """
-    if not isinstance(context, dict):
-        return []
-
-    current_prompts = context.get("current_system_prompts")
-    if not isinstance(current_prompts, dict):
-        return []
-
-    sources: list[dict[str, str]] = []
-    for agent_name, prompt_text in current_prompts.items():
-        if not isinstance(prompt_text, str) or not prompt_text.strip():
-            continue
-        name = str(agent_name).strip() or "agent"
-        escaped = prompt_text.replace('"""', '\\"""').strip()
-        sources.append(
-            {
-                "path": f"context/{name}/definition.py",
-                "content": f'SYSTEM_PROMPT = """{escaped}"""',
-            }
-        )
-    return sources
-
-
-def _context_system_prompt(context: dict[str, Any] | None) -> str | None:
-    """Derive one composed system prompt from context when direct prompt is absent.
-
-    The output is intentionally structured by agent section to preserve source
-    attribution while still fitting single-prompt evaluation interfaces.
-    """
-    if not isinstance(context, dict):
-        return None
-
-    direct_prompt = context.get("system_prompt")
+    direct_prompt = request.get("system_prompt")
     if isinstance(direct_prompt, str) and direct_prompt.strip():
         return direct_prompt.strip()
 
-    current_prompts = context.get("current_system_prompts")
-    if not isinstance(current_prompts, dict):
-        return None
+    context = request.get("context") or {}
+    prompts = context.get("current_system_prompts")
 
-    sections: list[str] = []
-    for agent_name, prompt_text in current_prompts.items():
-        if not isinstance(prompt_text, str) or not prompt_text.strip():
-            continue
-        name = str(agent_name).strip() or "agent"
-        sections.append(f"## {name}\n{prompt_text.strip()}")
+    if isinstance(prompts, dict) and prompts:
+        blocks: list[str] = []
+        for name, text in prompts.items():
+            if isinstance(text, str) and text.strip():
+                blocks.append(f"[{name}]\n{text.strip()}")
+        return "\n\n".join(blocks)
 
-    if not sections:
-        return None
-
-    return "You are refining a multi-agent system prompt set.\n\n" + "\n\n".join(sections)
+    return ""
 
 
-def _merge_prompt_sources(
-    primary: Any,
-    extras: list[dict[str, str]],
-) -> Any:
-    """Merge normalized prompt-source extras into a possibly heterogeneous base value.
+def _resolve_trace_text(request: dict[str, Any]) -> str:
+    explicit_trace = request.get("trace")
+    if explicit_trace is not None:
+        return _stringify(explicit_trace)
 
-    This keeps original caller shape when possible while ensuring context-derived
-    sources participate in downstream prompt candidate extraction.
-    """
-    if not extras:
-        return primary
-    if primary is None:
-        return extras
-    if isinstance(primary, list):
-        return [*primary, *extras]
-    return [primary, *extras]
+    logs = request.get("logs")
+    if logs is not None:
+        return _stringify(logs)
+
+    return ""
 
 
-def _normalize_payload_shape(payload: dict[str, Any]) -> tuple[dict[str, Any], dict[str, str]]:
-    """Fill missing optional fields so MCP payload schema remains stable.
+def _build_judge_input(request: dict[str, Any]) -> str:
+    assistant_name = request.get("assistant_name", "unknown_assistant")
+    user_input = request.get("user_input", "")
+    blueprint = _resolve_blueprint_text(request)
+    trace = _resolve_trace_text(request)
+    ground_truth = _stringify(request.get("ground_truth_content"))
 
-    Shape metadata records whether values were provided or auto-filled, which
-    helps debug client interoperability without rejecting partial payloads.
-    """
-    normalized = dict(payload)
-    shape_status: dict[str, str] = {}
-    defaults: dict[str, Any] = {
-        "logs": None,
-        "ground_truth_content": None,
-        "log_sources": [],
+    return (
+        f"Assistant: {assistant_name}\n\n"
+        "Please evaluate the following assistant execution.\n\n"
+        f"User Input:\n{user_input}\n\n"
+        f"Blueprint:\n{blueprint}\n\n"
+        f"Execution Trace:\n{trace}\n\n"
+        f"Ground Truth:\n{ground_truth}\n"
+    )
+
+
+def _build_refiner_input(request: dict[str, Any], judge_output: str) -> str:
+    assistant_name = request.get("assistant_name", "unknown_assistant")
+    user_input = request.get("user_input", "")
+    blueprint = _resolve_blueprint_text(request)
+    trace = _resolve_trace_text(request)
+    ground_truth = _stringify(request.get("ground_truth_content"))
+
+    return (
+        f"Assistant: {assistant_name}\n\n"
+        "Please improve the following blueprint using the judge feedback.\n\n"
+        f"User Input:\n{user_input}\n\n"
+        f"Current Blueprint:\n{blueprint}\n\n"
+        f"Execution Trace:\n{trace}\n\n"
+        f"Ground Truth:\n{ground_truth}\n\n"
+        f"Judge Feedback:\n{judge_output}\n"
+    )
+
+
+def _make_chat_client() -> AzureOpenAIChatClient:
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+    api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+    deployment = (
+        os.getenv("AZURE_OPENAI_DEPLOYMENT")
+        or os.getenv("AZURE_OPENAI_MODEL")
+        or "gpt-4o-mini"
+    )
+
+    if api_key:
+        return AzureOpenAIChatClient(
+            api_key=api_key,
+            endpoint=endpoint,
+            deployment_name=deployment,
+        )
+
+    return AzureOpenAIChatClient(
+        credential=AzureCliCredential(),
+        endpoint=endpoint,
+        deployment_name=deployment,
+    )
+
+
+def _call_judge(request: dict[str, Any]) -> dict[str, Any]:
+    client = _make_chat_client()
+    judge_agent = create_judge_agent(client)
+    judge_input = _build_judge_input(request)
+
+    result = judge_agent.run(judge_input)
+    output_text = getattr(result, "text", None) or str(result)
+
+    return {
+        "assistant_name": request.get("assistant_name"),
+        "case_id": request.get("case_id"),
+        "evaluation": output_text,
+        "metadata": request.get("metadata", {}),
     }
 
-    for key, default_value in defaults.items():
-        if key in normalized and normalized[key] is not None:
-            shape_status[key] = "provided"
-            continue
 
-        if isinstance(default_value, list):
-            normalized[key] = []
-        elif isinstance(default_value, dict):
-            normalized[key] = {}
-        else:
-            normalized[key] = default_value
+def _call_refiner(request: dict[str, Any], judge_output: str) -> dict[str, Any]:
+    client = _make_chat_client()
+    refiner_agent = create_refiner_agent(client)
+    refiner_input = _build_refiner_input(request, judge_output)
 
-        if key in payload:
-            shape_status[key] = "normalized_from_null"
-        else:
-            shape_status[key] = "auto_filled"
+    result = refiner_agent.run(refiner_input)
+    output_text = getattr(result, "text", None) or str(result)
 
-    return normalized, shape_status
+    return {
+        "assistant_name": request.get("assistant_name"),
+        "case_id": request.get("case_id"),
+        "refinement": output_text,
+        "metadata": request.get("metadata", {}),
+    }
 
 
-def _to_payload_case(payload: PayloadInputSchema | dict[str, Any] | None):
-    """Normalize incoming tool payload and resolve a unified `AgentCase`.
+def _run_single_refinement(request: dict[str, Any]) -> dict[str, Any]:
+    evaluation_result = _call_judge(request)
+    judge_output = evaluation_result["evaluation"]
 
-    This function handles field aliases, nested payload wrappers, and context
-    fallbacks so all MCP tools share one robust ingestion path.
-    """
-    if payload is None:
-        payload = {}
-    if not isinstance(payload, dict):
-        raise ValueError("payload_input must be a JSON object.")
+    refinement_result = _call_refiner(request, judge_output)
 
-    nested_payload = payload.get("payload_input")
-    if isinstance(nested_payload, dict):
-        payload = nested_payload
-    payload, payload_shape = _normalize_payload_shape(payload)
-
-    context_files = payload.get("context_files")
-    if context_files is not None and not isinstance(context_files, list):
-        raise ValueError("context_files must be a list of strings.")
-
-    metadata_raw = payload.get("metadata")
-    if metadata_raw is not None and not isinstance(metadata_raw, dict):
-        raise ValueError("metadata must be an object.")
-    metadata: dict[str, Any] = dict(metadata_raw) if isinstance(metadata_raw, dict) else {}
-    metadata["payload_shape"] = payload_shape
-
-    context = payload.get("context")
-    if context is not None and not isinstance(context, dict):
-        raise ValueError("context must be an object when provided.")
-    context_obj: dict[str, Any] | None = context if isinstance(context, dict) else None
-
-    prompt_sources = payload.get("prompt_sources")
-    if prompt_sources is None:
-        prompt_sources = payload.get("files")
-    if prompt_sources is None and context_obj is not None:
-        prompt_sources = context_obj.get("prompt_sources") or context_obj.get("files")
-    prompt_sources = _merge_prompt_sources(
-        primary=prompt_sources,
-        extras=_context_prompt_sources(context_obj),
-    )
-
-    log_sources = payload.get("log_sources")
-    if log_sources is None:
-        log_sources = payload.get("logs_files")
-    if log_sources is None and context_obj is not None:
-        log_sources = context_obj.get("log_sources") or context_obj.get("logs_files")
-
-    user_input = payload.get("user_input")
-    if not isinstance(user_input, str) or not user_input.strip():
-        alt_user_input = payload.get("copilot_user_input")
-        if isinstance(alt_user_input, str):
-            user_input = alt_user_input
-        elif context_obj is not None and isinstance(context_obj.get("user_input"), str):
-            user_input = context_obj.get("user_input")
-        else:
-            user_input = None
-
-    system_prompt = payload.get("system_prompt")
-    if not (isinstance(system_prompt, str) and system_prompt.strip()):
-        system_prompt = _context_system_prompt(context_obj)
-
-    definition_py_content = payload.get("definition_py_content")
-    if not (
-        isinstance(definition_py_content, str) and definition_py_content.strip()
-    ) and context_obj is not None:
-        maybe_definition = context_obj.get("definition_py_content")
-        if isinstance(maybe_definition, str):
-            definition_py_content = maybe_definition
-
-    logs = payload.get("logs")
-    if logs is None and context_obj is not None:
-        logs = context_obj.get("logs")
-
-    ground_truth = payload.get("ground_truth")
-    if ground_truth is None and context_obj is not None:
-        ground_truth = context_obj.get("ground_truth")
-
-    ground_truth_content = payload.get("ground_truth_content")
-    if ground_truth_content is None and context_obj is not None:
-        ground_truth_content = context_obj.get("ground_truth_content")
-
-    return build_case_from_payload(
-        workspace=payload.get("workspace") or ".",
-        system_prompt=system_prompt,
-        definition_py_content=definition_py_content,
-        prompt_sources=prompt_sources,
-        user_input=user_input,
-        require_user_input=_as_bool(payload.get("require_user_input"), True),
-        ground_truth=ground_truth,
-        ground_truth_content=ground_truth_content,
-        logs=logs,
-        log_sources=log_sources,
-        context_files=context_files,
-        case_id=payload.get("case_id"),
-        metadata=metadata,
-    )
+    return {
+        "assistant_name": request.get("assistant_name"),
+        "case_id": request.get("case_id"),
+        "evaluation": evaluation_result,
+        "refinement": refinement_result,
+        "metadata": request.get("metadata", {}),
+    }
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    """Build CLI parser for running the MCP server in different transports.
+def _run_loop(request: dict[str, Any]) -> dict[str, Any]:
+    rounds: list[dict[str, Any]] = []
+    total_iters = max(1, request.get("max_iters", 1))
 
-    Options mirror env vars so local dev, container deploys, and remote setups
-    can use the same entrypoint with minimal wrapper scripts.
-    """
+    working_request = dict(request)
+    latest_eval = ""
+    latest_refinement = ""
+
+    for idx in range(total_iters):
+        evaluation_result = _call_judge(working_request)
+        latest_eval = evaluation_result["evaluation"]
+
+        refinement_result = _call_refiner(working_request, latest_eval)
+        latest_refinement = refinement_result["refinement"]
+
+        rounds.append(
+            {
+                "iteration": idx + 1,
+                "evaluation": latest_eval,
+                "refinement": latest_refinement,
+            }
+        )
+
+        working_request = dict(working_request)
+        working_request["blueprint"] = latest_refinement
+
+    return {
+        "assistant_name": request.get("assistant_name"),
+        "case_id": request.get("case_id"),
+        "iterations": rounds,
+        "final_evaluation": latest_eval,
+        "final_refinement": latest_refinement,
+        "metadata": request.get("metadata", {}),
+    }
+
+
+def _build_cli() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="prompt-refiner-mcp",
-        description="Run Copilot Prompt Refiner MCP server.",
+        description="Run the Agentic AI Prompt Refiner MCP server.",
     )
     parser.add_argument(
         "--transport",
         choices=["stdio", "sse", "streamable-http"],
         default=os.getenv("PROMPT_REFINER_MCP_TRANSPORT", "stdio"),
-        help="MCP transport (stdio for local tool runner, streamable-http/sse for remote).",
     )
     parser.add_argument(
         "--host",
         default=os.getenv("PROMPT_REFINER_MCP_HOST", "127.0.0.1"),
-        help="Host for HTTP/SSE transports.",
     )
     parser.add_argument(
         "--port",
         type=int,
         default=int(os.getenv("PROMPT_REFINER_MCP_PORT", "8000")),
-        help="Port for HTTP/SSE transports.",
     )
     parser.add_argument(
         "--mount-path",
         default=os.getenv("PROMPT_REFINER_MCP_MOUNT_PATH", "/"),
-        help="Mount path used by SSE transport.",
     )
     parser.add_argument(
         "--streamable-http-path",
         default=os.getenv("PROMPT_REFINER_MCP_STREAMABLE_HTTP_PATH", "/mcp"),
-        help="Streamable HTTP endpoint path.",
     )
     parser.add_argument(
         "--sse-path",
         default=os.getenv("PROMPT_REFINER_MCP_SSE_PATH", "/sse"),
-        help="SSE endpoint path.",
     )
     parser.add_argument(
         "--message-path",
         default=os.getenv("PROMPT_REFINER_MCP_MESSAGE_PATH", "/messages/"),
-        help="SSE message endpoint path.",
     )
     parser.add_argument(
         "--stateless-http",
         default=os.getenv("PROMPT_REFINER_MCP_STATELESS_HTTP", "true"),
         choices=["true", "false", "1", "0", "yes", "no", "on", "off"],
-        help=(
-            "Use stateless Streamable HTTP mode (no session id required). "
-            "Recommended for broad MCP client compatibility."
-        ),
     )
     parser.add_argument(
         "--log-level",
         default=os.getenv("PROMPT_REFINER_MCP_LOG_LEVEL", "INFO"),
         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"],
-        help="MCP server log level.",
     )
     return parser
 
 
 def main(argv: list[str] | None = None) -> None:
-    """Start MCP server, register tools, and dispatch selected transport mode.
-
-    The server builds one default refinement pipeline instance and exposes
-    discovery/evaluate/refine/run tools over FastMCP.
-    """
-    args = _build_parser().parse_args(argv)
+    args = _build_cli().parse_args(argv)
 
     try:
         from mcp.server.fastmcp import FastMCP
@@ -368,7 +339,6 @@ def main(argv: list[str] | None = None) -> None:
             "MCP SDK is not installed. Install with: pip install -e .[mcp]"
         ) from exc
 
-    pipeline = PromptRefinementPipeline.default()
     mcp = FastMCP(
         "copilot-prompt-refiner",
         host=args.host,
@@ -377,67 +347,24 @@ def main(argv: list[str] | None = None) -> None:
         sse_path=args.sse_path,
         message_path=args.message_path,
         streamable_http_path=args.streamable_http_path,
-        stateless_http=_as_bool(args.stateless_http, True),
+        stateless_http=_coerce_bool(args.stateless_http, True),
         log_level=args.log_level,
     )
 
     @mcp.tool()
-    def discover_case_input(payload_input: PayloadInputSchema | None = None) -> dict[str, Any]:
-        """Inspect payload resolution results without running judge/refine logic.
-
-        Useful for client-side debugging because it shows resolved prompt/input
-        fields and discovery metadata before expensive model calls.
-        """
-        case = _to_payload_case(payload_input)
-        return {
-            "case_input": {
-                "case_id": case.case_id,
-                "system_prompt": case.system_prompt,
-                "user_input": case.user_input,
-                "ground_truth": case.ground_truth,
-                "log_count": len(case.logs),
-                "context_files": case.context_files,
-            },
-            "metadata": case.metadata,
-        }
+    def evaluate_prompt(payload_input: MCPPayload | None = None) -> dict[str, Any]:
+        request = _ensure_request(payload_input)
+        return _call_judge(request)
 
     @mcp.tool()
-    def evaluate_prompt(payload_input: PayloadInputSchema | None = None) -> dict[str, Any]:
-        """Return Judge evaluation artifacts for a resolved payload case.
-
-        This is the read-only scoring endpoint for workflows that want verdicts
-        and action recommendations without applying prompt mutations.
-        """
-        case = _to_payload_case(payload_input)
-        result = pipeline.evaluate(case)
-        return result.to_dict()
+    def refine_prompt(payload_input: MCPPayload | None = None) -> dict[str, Any]:
+        request = _ensure_request(payload_input)
+        return _run_single_refinement(request)
 
     @mcp.tool()
-    def refine_prompt(payload_input: PayloadInputSchema | None = None) -> dict[str, Any]:
-        """Run a single judge+refine pass and return the resulting prompt revision.
-
-        Use this endpoint when iterative convergence is unnecessary and a single
-        targeted patch is sufficient for the calling workflow.
-        """
-        case = _to_payload_case(payload_input)
-        result = pipeline.refine(case)
-        return result.to_dict()
-
-    @mcp.tool()
-    def run_refinement_pipeline(
-        payload_input: PayloadInputSchema | None = None,
-    ) -> dict[str, Any]:
-        """Run iterative evaluate/refine loop and return full pipeline artifacts.
-
-        Includes final judge output, latest revision, iteration traces, and stop
-        reason so clients can inspect convergence and residual risk.
-        """
-        case = _to_payload_case(payload_input)
-        result = pipeline.run(
-            case,
-            max_iters=_as_int((payload_input or {}).get("max_iters")),
-        )
-        return result.to_dict()
+    def run_refine_pipeline(payload_input: MCPPayload | None = None) -> dict[str, Any]:
+        request = _ensure_request(payload_input)
+        return _run_loop(request)
 
     mcp.run(
         transport=args.transport,
