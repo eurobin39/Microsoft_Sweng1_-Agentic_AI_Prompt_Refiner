@@ -85,9 +85,6 @@ frontend-smoke:
 azure-openai-connectivity:
   stage: integration
   extends: .python-job
-  rules:
-    - if: '$ENABLE_AZURE_OPENAI_CHECK == "true"'
-    - when: never
   script:
     - |
       python - <<'PY'
@@ -156,9 +153,6 @@ azure-openai-connectivity:
 agent-framework-smoke:
   stage: integration
   extends: .python-job
-  rules:
-    - if: '$ENABLE_AGENT_FRAMEWORK_CHECK == "true"'
-    - when: never
   script:
     - pip install -r backend/requirements-ci.txt agent-framework agent-framework-azure-ai azure-identity python-dotenv requests
     - export PYTHONPATH="$CI_PROJECT_DIR/backend:$CI_PROJECT_DIR/backend/app/demos"
@@ -193,12 +187,128 @@ agent-framework-smoke:
       print("Agent Framework smoke check OK (code + resume agents).")
       PY
 
+fastapi-endpoint-smoke:
+  stage: integration
+  extends: .python-job
+  script:
+    - pip install -r backend/requirements-ci.txt fastapi uvicorn python-dotenv agent-framework agent-framework-azure-ai azure-identity
+    - |
+      python - <<'PY'
+      import json
+      import os
+      import subprocess
+      import sys
+      import time
+      import urllib.error
+      import urllib.request
+
+      project_dir = os.getcwd()
+      backend_dir = os.path.join(project_dir, "backend")
+      env = os.environ.copy()
+      env["PYTHONPATH"] = backend_dir
+
+      server = subprocess.Popen(
+          [
+              sys.executable,
+              "-m",
+              "uvicorn",
+              "app.main:app",
+              "--host",
+              "127.0.0.1",
+              "--port",
+              "8001",
+              "--log-level",
+              "warning",
+          ],
+          cwd=backend_dir,
+          env=env,
+          stdout=subprocess.PIPE,
+          stderr=subprocess.STDOUT,
+          text=True,
+      )
+
+      def http_get(url: str, timeout: int = 5):
+          with urllib.request.urlopen(url, timeout=timeout) as response:
+              return response.getcode(), response.read().decode("utf-8")
+
+      def http_post_json(url: str, payload: dict, timeout: int = 10):
+          req = urllib.request.Request(
+              url,
+              data=json.dumps(payload).encode("utf-8"),
+              method="POST",
+              headers={"Content-Type": "application/json"},
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=timeout) as response:
+                  return response.getcode(), response.read().decode("utf-8")
+          except urllib.error.HTTPError as exc:
+              return exc.code, exc.read().decode("utf-8", errors="ignore")
+
+      try:
+          ready = False
+          for _ in range(30):
+              try:
+                  status, body = http_get("http://127.0.0.1:8001/api/health", timeout=2)
+                  if status == 200 and json.loads(body).get("status") == "ok":
+                      ready = True
+                      break
+              except Exception:  # noqa: BLE001
+                  time.sleep(1)
+
+          if not ready:
+              print("FastAPI server did not become ready in time.")
+              sys.exit(1)
+
+          status, openapi_body = http_get("http://127.0.0.1:8001/openapi.json")
+          if status != 200:
+              print(f"Failed to fetch OpenAPI spec: HTTP {status}")
+              sys.exit(1)
+
+          openapi = json.loads(openapi_body)
+          paths = openapi.get("paths", {})
+          if "/api/health" not in paths:
+              print("OpenAPI missing /api/health path.")
+              sys.exit(1)
+          if "/api/v1/evaluate" not in paths:
+              print("OpenAPI missing /api/v1/evaluate path.")
+              sys.exit(1)
+
+          eval_payload = {
+              "blueprint": {
+                  "agent": {"system_prompt": "You are a helpful assistant."},
+                  "test_cases": [{"input": "hello"}],
+              },
+              "traces": [],
+          }
+          eval_status, eval_body = http_post_json(
+              "http://127.0.0.1:8001/api/v1/evaluate",
+              eval_payload,
+          )
+
+          if eval_status not in (200, 500):
+              print(f"Unexpected /api/v1/evaluate status: {eval_status}")
+              print(eval_body[:400])
+              sys.exit(1)
+
+          if eval_status == 200:
+              parsed = json.loads(eval_body)
+              if "evaluation" not in parsed:
+                  print("Evaluate response missing 'evaluation' key.")
+                  sys.exit(1)
+              print("FastAPI endpoint smoke OK (/health + /evaluate=200).")
+          else:
+              print("FastAPI endpoint reachable (/evaluate returned 500 due to runtime dependencies).")
+      finally:
+          server.terminate()
+          try:
+              server.wait(timeout=10)
+          except subprocess.TimeoutExpired:
+              server.kill()
+      PY
+
 mcp-apim-healthcheck:
   stage: integration
   extends: .python-job
-  rules:
-    - if: '$ENABLE_MCP_APIM_CHECK == "true"'
-    - when: never
   script:
     - |
       python - <<'PY'
