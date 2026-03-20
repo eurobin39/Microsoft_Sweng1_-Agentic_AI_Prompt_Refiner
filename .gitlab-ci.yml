@@ -96,18 +96,18 @@ azure-openai-connectivity:
       import urllib.error
       import urllib.request
 
-      required = [
-          "AZURE_OPENAI_ENDPOINT",
-          "AZURE_OPENAI_API_KEY",
-          "AZURE_OPENAI_DEPLOYMENT_NAME",
-      ]
-      missing = [name for name in required if not os.getenv(name)]
+      deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME") or os.getenv("AZURE_OPENAI_DEPLOYMENT")
+      required = {
+          "AZURE_OPENAI_ENDPOINT": os.getenv("AZURE_OPENAI_ENDPOINT"),
+          "AZURE_OPENAI_API_KEY": os.getenv("AZURE_OPENAI_API_KEY"),
+          "AZURE_OPENAI_DEPLOYMENT_NAME|AZURE_OPENAI_DEPLOYMENT": deployment,
+      }
+      missing = [name for name, value in required.items() if not value]
       if missing:
           print(f"Missing required variables: {', '.join(missing)}")
           sys.exit(1)
 
       endpoint = os.environ["AZURE_OPENAI_ENDPOINT"].rstrip("/")
-      deployment = os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"]
       api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-10-21")
       url = (
           f"{endpoint}/openai/deployments/{deployment}/chat/completions"
@@ -163,15 +163,20 @@ agent-framework-smoke:
       import os
       import sys
 
-      required = [
-          "AZURE_OPENAI_ENDPOINT",
-          "AZURE_OPENAI_API_KEY",
-          "AZURE_OPENAI_DEPLOYMENT_NAME",
-      ]
-      missing = [name for name in required if not os.getenv(name)]
+      deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME") or os.getenv("AZURE_OPENAI_DEPLOYMENT")
+      required = {
+          "AZURE_OPENAI_ENDPOINT": os.getenv("AZURE_OPENAI_ENDPOINT"),
+          "AZURE_OPENAI_API_KEY": os.getenv("AZURE_OPENAI_API_KEY"),
+          "AZURE_OPENAI_DEPLOYMENT_NAME|AZURE_OPENAI_DEPLOYMENT": deployment,
+      }
+      missing = [name for name, value in required.items() if not value]
       if missing:
           print(f"Missing required variables: {', '.join(missing)}")
           sys.exit(1)
+
+      # Support both naming conventions used across this repo.
+      os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"] = deployment
+      os.environ["AZURE_OPENAI_DEPLOYMENT"] = deployment
 
       from app.demos.code_assistant.agents import explain_code
       from app.demos.resume_assistant.agents import analyze_job
@@ -194,118 +199,65 @@ fastapi-endpoint-smoke:
   extends: .python-job
   script:
     - pip install -r backend/requirements-ci.txt fastapi uvicorn python-dotenv agent-framework agent-framework-azure-ai azure-identity
+    - export PYTHONPATH="$CI_PROJECT_DIR/backend"
     - |
       python - <<'PY'
       import json
       import os
-      import subprocess
-      import sys
-      import time
-      import urllib.error
-      import urllib.request
+      from fastapi.testclient import TestClient
 
-      project_dir = os.getcwd()
-      backend_dir = os.path.join(project_dir, "backend")
-      env = os.environ.copy()
-      env["PYTHONPATH"] = backend_dir
+      # Ensure both naming conventions are available if either one is set.
+      deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME") or os.getenv("AZURE_OPENAI_DEPLOYMENT")
+      if deployment:
+          os.environ["AZURE_OPENAI_DEPLOYMENT_NAME"] = deployment
+          os.environ["AZURE_OPENAI_DEPLOYMENT"] = deployment
 
-      server = subprocess.Popen(
-          [
-              sys.executable,
-              "-m",
-              "uvicorn",
-              "app.main:app",
-              "--host",
-              "127.0.0.1",
-              "--port",
-              "8001",
-              "--log-level",
-              "warning",
-          ],
-          cwd=backend_dir,
-          env=env,
-          stdout=subprocess.PIPE,
-          stderr=subprocess.STDOUT,
-          text=True,
-      )
+      from app.main import app
 
-      def http_get(url: str, timeout: int = 5):
-          with urllib.request.urlopen(url, timeout=timeout) as response:
-              return response.getcode(), response.read().decode("utf-8")
+      client = TestClient(app)
 
-      def http_post_json(url: str, payload: dict, timeout: int = 10):
-          req = urllib.request.Request(
-              url,
-              data=json.dumps(payload).encode("utf-8"),
-              method="POST",
-              headers={"Content-Type": "application/json"},
-          )
-          try:
-              with urllib.request.urlopen(req, timeout=timeout) as response:
-                  return response.getcode(), response.read().decode("utf-8")
-          except urllib.error.HTTPError as exc:
-              return exc.code, exc.read().decode("utf-8", errors="ignore")
+      health = client.get("/api/health")
+      if health.status_code != 200:
+          print(f"/api/health failed: HTTP {health.status_code} {health.text[:300]}")
+          raise SystemExit(1)
+      if health.json().get("status") != "ok":
+          print(f"/api/health unexpected payload: {health.text[:300]}")
+          raise SystemExit(1)
 
-      try:
-          ready = False
-          for _ in range(30):
-              try:
-                  status, body = http_get("http://127.0.0.1:8001/api/health", timeout=2)
-                  if status == 200 and json.loads(body).get("status") == "ok":
-                      ready = True
-                      break
-              except Exception:  # noqa: BLE001
-                  time.sleep(1)
+      openapi_resp = client.get("/openapi.json")
+      if openapi_resp.status_code != 200:
+          print(f"/openapi.json failed: HTTP {openapi_resp.status_code}")
+          raise SystemExit(1)
 
-          if not ready:
-              print("FastAPI server did not become ready in time.")
-              sys.exit(1)
+      paths = openapi_resp.json().get("paths", {})
+      if "/api/health" not in paths:
+          print("OpenAPI missing /api/health path.")
+          raise SystemExit(1)
+      if "/api/v1/evaluate" not in paths:
+          print("OpenAPI missing /api/v1/evaluate path.")
+          raise SystemExit(1)
 
-          status, openapi_body = http_get("http://127.0.0.1:8001/openapi.json")
-          if status != 200:
-              print(f"Failed to fetch OpenAPI spec: HTTP {status}")
-              sys.exit(1)
+      eval_payload = {
+          "blueprint": {
+              "agent": {"system_prompt": "You are a helpful assistant."},
+              "test_cases": [{"input": "hello"}],
+          },
+          "traces": [],
+      }
+      eval_resp = client.post("/api/v1/evaluate", json=eval_payload)
+      if eval_resp.status_code not in (200, 500):
+          print(f"Unexpected /api/v1/evaluate status: {eval_resp.status_code}")
+          print(eval_resp.text[:400])
+          raise SystemExit(1)
 
-          openapi = json.loads(openapi_body)
-          paths = openapi.get("paths", {})
-          if "/api/health" not in paths:
-              print("OpenAPI missing /api/health path.")
-              sys.exit(1)
-          if "/api/v1/evaluate" not in paths:
-              print("OpenAPI missing /api/v1/evaluate path.")
-              sys.exit(1)
-
-          eval_payload = {
-              "blueprint": {
-                  "agent": {"system_prompt": "You are a helpful assistant."},
-                  "test_cases": [{"input": "hello"}],
-              },
-              "traces": [],
-          }
-          eval_status, eval_body = http_post_json(
-              "http://127.0.0.1:8001/api/v1/evaluate",
-              eval_payload,
-          )
-
-          if eval_status not in (200, 500):
-              print(f"Unexpected /api/v1/evaluate status: {eval_status}")
-              print(eval_body[:400])
-              sys.exit(1)
-
-          if eval_status == 200:
-              parsed = json.loads(eval_body)
-              if "evaluation" not in parsed:
-                  print("Evaluate response missing 'evaluation' key.")
-                  sys.exit(1)
-              print("FastAPI endpoint smoke OK (/health + /evaluate=200).")
-          else:
-              print("FastAPI endpoint reachable (/evaluate returned 500 due to runtime dependencies).")
-      finally:
-          server.terminate()
-          try:
-              server.wait(timeout=10)
-          except subprocess.TimeoutExpired:
-              server.kill()
+      if eval_resp.status_code == 200:
+          parsed = eval_resp.json()
+          if "evaluation" not in parsed:
+              print("Evaluate response missing 'evaluation' key.")
+              raise SystemExit(1)
+          print("FastAPI endpoint smoke OK (/health + /evaluate=200).")
+      else:
+          print("FastAPI endpoint reachable (/evaluate returned 500 due to runtime dependencies).")
       PY
 
 mcp-apim-healthcheck:
@@ -319,9 +271,18 @@ mcp-apim-healthcheck:
       import urllib.error
       import urllib.request
 
-      url = os.getenv("MCP_APIM_HEALTHCHECK_URL", "").strip()
+      url = (
+          os.getenv("MCP_APIM_HEALTHCHECK_URL", "").strip()
+          or os.getenv("APIM_MCP_HEALTHCHECK_URL", "").strip()
+          or os.getenv("MCP_SERVER_HEALTHCHECK_URL", "").strip()
+          or os.getenv("MCP_SERVER_URL", "").strip()
+      )
       if not url:
-          print("Missing required variable: MCP_APIM_HEALTHCHECK_URL")
+          print(
+              "Missing required variable: one of "
+              "MCP_APIM_HEALTHCHECK_URL / APIM_MCP_HEALTHCHECK_URL / "
+              "MCP_SERVER_HEALTHCHECK_URL / MCP_SERVER_URL"
+          )
           sys.exit(1)
 
       headers = {}
