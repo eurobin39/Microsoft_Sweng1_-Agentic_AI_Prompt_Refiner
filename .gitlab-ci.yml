@@ -24,6 +24,8 @@ variables:
   NPM_CONFIG_CACHE: "$CI_PROJECT_DIR/.cache/npm"
   PYTHONDONTWRITEBYTECODE: "1"
   PYTHONUNBUFFERED: "1"
+  GIT_DEPTH: "0"
+  GIT_STRATEGY: clone
 
 cache:
   key: "$CI_COMMIT_REF_SLUG"
