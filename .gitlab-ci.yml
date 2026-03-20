@@ -11,7 +11,7 @@ workflow:
     - when: never
 
 default:
-  tags: ["docker"]
+  tags: ["docker", "euro-macmini-runner"]
   interruptible: true
   retry:
     max: 1
