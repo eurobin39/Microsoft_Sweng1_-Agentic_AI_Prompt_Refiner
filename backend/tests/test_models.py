@@ -110,17 +110,41 @@ class TestAgentBlueprint:
 
 TRACE_DIR = Path(__file__).resolve().parent.parent / "app" / "demos" / "travel_assistant" / "log" / "traces"
 
+# Inline fixture — not tied to any specific file on disk
+HANDOFF_TRACE_FIXTURE = {
+    "timestamp": "2026-02-11T00:05:06.000000",
+    "mode": "handoff",
+    "input": "What's the weather like in Tokyo?",
+    "agents": {
+        "triage_agent": {
+            "instructions": "Route the user to the right agent.",
+            "tools_available": [],
+            "tool_calls": [],
+            "output": "",
+            "duration_ms": None,
+        },
+        "weather_agent": {
+            "instructions": "Tell the user about the weather.",
+            "tools_available": ["get_weather"],
+            "tool_calls": [
+                {"tool": "get_weather", "arguments": "", "result": "Sunny, 18°C"},
+            ],
+            "output": "It is sunny and 18°C in Tokyo.",
+            "duration_ms": 5367,
+        },
+    },
+    "execution_order": ["triage_agent", "weather_agent"],
+    "handoffs": [{"from": "triage_agent", "to": "weather_agent"}],
+    "final_output": "It is sunny and 18°C in Tokyo.",
+    "duration_ms": 7055,
+}
+
 
 class TestTraceLog:
-    """Test TraceLog parsing against real trace files on disk."""
-
-    def _load_trace(self, filename: str) -> dict:
-        with open(TRACE_DIR / filename, encoding="utf-8") as f:
-            return json.load(f)
+    """Test TraceLog parsing."""
 
     def test_parse_handoff_trace(self):
-        data = self._load_trace("trace_handoff_20260211_000506.json")
-        trace = TraceLog.model_validate(data)
+        trace = TraceLog.model_validate(HANDOFF_TRACE_FIXTURE)
 
         assert trace.mode == "handoff"
         assert trace.input == "What's the weather like in Tokyo?"
@@ -131,8 +155,7 @@ class TestTraceLog:
 
     def test_handoff_from_to_parsed(self):
         """The critical fix — handoff 'from'/'to' keys must be captured."""
-        data = self._load_trace("trace_handoff_20260211_000506.json")
-        trace = TraceLog.model_validate(data)
+        trace = TraceLog.model_validate(HANDOFF_TRACE_FIXTURE)
 
         assert len(trace.handoffs) == 1
         handoff = trace.handoffs[0]
@@ -140,8 +163,7 @@ class TestTraceLog:
         assert handoff.to_agent == "weather_agent"
 
     def test_agent_tool_calls_parsed(self):
-        data = self._load_trace("trace_handoff_20260211_000506.json")
-        trace = TraceLog.model_validate(data)
+        trace = TraceLog.model_validate(HANDOFF_TRACE_FIXTURE)
 
         weather = trace.agents["weather_agent"]
         assert len(weather.tool_calls) == 1
