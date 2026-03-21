@@ -1,6 +1,36 @@
 from agent_framework import ChatAgent
 from agent_framework.azure import AzureOpenAIChatClient
 
+from app.services.judge_tools import save_evaluation_result
+from app.services.refiner_tools import save_refinement_result
+
+@tool(
+    name="store_evaluation_result",
+    description="Persist judge evaluation output to disk as an audit log.",
+)
+def store_evaluation_result(agent_name: str, score: float, summary: str) -> bool:
+    return save_evaluation_result(agent_name, score, summary)
+
+
+@tool(
+    name="store_refinement_result",
+    description="Persist refiner output to disk as an audit log.",
+)
+def store_refinement_result(
+    refined_prompt: str,
+    summary: str,
+    changes: list[dict[str, Any]] | None = None,
+    expected_impact: str | None = None,
+    agent_name: str = "refiner_agent",
+) -> str:
+    return save_refinement_result(
+        agent_name=agent_name,
+        refined_prompt=refined_prompt,
+        summary=summary,
+        changes=changes,
+        expected_impact=expected_impact,
+    )
+    
 
 # ═══════════════════════════ Judge Tools ═══════════════════════════
 
