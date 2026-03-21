@@ -158,11 +158,18 @@ export default function Home() {
   return (
     <div className="space-y-10">
       {/* Hero */}
-      <div className="space-y-3">
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-          Agentic AI Prompt Refiner
+      <div className="space-y-4 pt-2">
+        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
+          <span className="text-xs font-medium text-indigo-700">AI-Powered Prompt Analysis</span>
+        </div>
+        <h1 className="text-4xl font-bold tracking-tight">
+          <span className="bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 bg-clip-text text-transparent">
+            Agentic AI
+          </span>{" "}
+          <span className="text-slate-900">Prompt Refiner</span>
         </h1>
-        <p className="text-gray-500 max-w-xl">
+        <p className="text-slate-500 max-w-xl text-base leading-relaxed">
           Point it at a GitHub repo containing AI agents. It will crawl the
           code, extract a blueprint per agent, and refine each system prompt
           against its test cases.
@@ -178,12 +185,12 @@ export default function Home() {
           placeholder="https://github.com/owner/repo"
           required
           disabled={isLoading}
-          className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900 disabled:opacity-50"
+          className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/50 focus:border-indigo-300 disabled:opacity-50 transition-all"
         />
         <button
           type="submit"
           disabled={isLoading}
-          className="rounded-lg bg-gray-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50 transition-colors"
+          className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-3 text-sm font-medium text-white hover:from-indigo-700 hover:to-violet-700 disabled:opacity-50 transition-all shadow-sm hover:shadow-md hover:shadow-indigo-200/60"
         >
           {stage === "extracting" ? "Crawling…" : "Extract Agents"}
         </button>
@@ -191,8 +198,8 @@ export default function Home() {
 
       {/* Loading */}
       {isLoading && (
-        <div className="flex items-center gap-3 text-sm text-gray-500">
-          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
+        <div className="flex items-center gap-3 text-sm text-slate-600 bg-white rounded-xl border border-slate-200 px-4 py-3 w-fit shadow-sm">
+          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
           {stage === "extracting"
             ? "Crawling repo and extracting agent blueprints…"
             : `Running refinement on ${items.length} agent${items.length !== 1 ? "s" : ""}…`}
@@ -201,28 +208,87 @@ export default function Home() {
 
       {/* Error */}
       {stage === "error" && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-3">
+          <svg className="h-4 w-4 mt-0.5 flex-shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
           {error}
+        </div>
+      )}
+
+      {/* How it works — only on idle */}
+      {stage === "idle" && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 pt-2">
+          {[
+            {
+              step: "01",
+              title: "Paste a GitHub URL",
+              desc: "Link to any repository containing AI agents built with frameworks like the OpenAI Agents SDK.",
+              icon: (
+                <svg className="h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+              ),
+            },
+            {
+              step: "02",
+              title: "Extract Blueprints",
+              desc: "We crawl the codebase, extract system prompts, tools, test cases, and execution traces per agent.",
+              icon: (
+                <svg className="h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              ),
+            },
+            {
+              step: "03",
+              title: "Refine Prompts",
+              desc: "Each agent's system prompt is evaluated against its test cases and refined for better performance.",
+              icon: (
+                <svg className="h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                </svg>
+              ),
+            },
+          ].map(({ step, title, desc, icon }) => (
+            <div
+              key={step}
+              className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center">
+                  {icon}
+                </div>
+                <span className="text-xs font-bold text-slate-300 font-mono tabular-nums">{step}</span>
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
+              </div>
+            </div>
+          ))}
         </div>
       )}
 
       {/* Extracted — show agents + Run Refine button */}
       {(stage === "extracted" || stage === "done") && items.length > 0 && (
-        <div className="space-y-4">
+        <div className="space-y-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-              <span className="text-sm font-medium text-gray-700">
-                Found {items.length} agent{items.length !== 1 ? "s" : ""}
-              </span>
-              <span className="text-sm text-gray-400">
+              <div className="flex items-center gap-2 rounded-full bg-green-50 border border-green-200 px-3 py-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                <span className="text-xs font-medium text-green-700">
+                  {items.length} agent{items.length !== 1 ? "s" : ""} found
+                </span>
+              </div>
+              <span className="text-sm text-slate-400">
                 · {items.reduce((n, it) => n + it.traces.length, 0)} trace{items.reduce((n, it) => n + it.traces.length, 0) !== 1 ? "s" : ""} scraped
               </span>
             </div>
             {stage === "extracted" && (
               <button
                 onClick={handleRefineAll}
-                className="rounded-lg bg-gray-900 px-5 py-2 text-sm font-medium text-white hover:bg-gray-700 transition-colors"
+                className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2 text-sm font-medium text-white hover:from-indigo-700 hover:to-violet-700 transition-all shadow-sm"
               >
                 Run Refine on All Agents
               </button>
@@ -274,7 +340,7 @@ function AgentCard({
   const score = result?.evaluation.overall_score;
   const scoreColor =
     score === undefined
-      ? "text-gray-400"
+      ? "text-slate-400"
       : score >= 0.7
       ? "text-green-600"
       : score >= 0.4
@@ -282,47 +348,58 @@ function AgentCard({
       : "text-red-600";
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden">
+    <div className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-hidden hover:shadow-md transition-shadow">
       {/* Card header — always visible */}
       <button
         onClick={onToggle}
-        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50/70 transition-colors"
       >
-        <div className="flex items-center gap-4">
-          <span className="text-sm font-semibold text-gray-900">{agentName}</span>
-          {blueprint.agent.description && (
-            <span className="text-sm text-gray-500">{blueprint.agent.description}</span>
-          )}
-          <span className="text-xs text-gray-400">
-            {blueprint.test_cases.length} test case{blueprint.test_cases.length !== 1 ? "s" : ""}
-          </span>
-          {blueprint.agent.tools && blueprint.agent.tools.length > 0 && (
-            <span className="text-xs text-gray-400">
-              {blueprint.agent.tools.length} tool{blueprint.agent.tools.length !== 1 ? "s" : ""}
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-100 to-violet-100 flex items-center justify-center flex-shrink-0">
+            <svg className="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
+            </svg>
+          </div>
+          <div className="min-w-0">
+            <span className="text-sm font-semibold text-slate-900">{agentName}</span>
+            {blueprint.agent.description && (
+              <p className="text-xs text-slate-500 truncate mt-0.5">{blueprint.agent.description}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-2 ml-1">
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+              {blueprint.test_cases.length} tests
             </span>
-          )}
-          <span className={`text-xs ${traces.length > 0 ? "text-blue-500" : "text-gray-300"}`}>
-            {traces.length} trace{traces.length !== 1 ? "s" : ""}
-          </span>
+            {blueprint.agent.tools && blueprint.agent.tools.length > 0 && (
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                {blueprint.agent.tools.length} tools
+              </span>
+            )}
+            <span className={`rounded-full px-2 py-0.5 text-xs ${
+              traces.length > 0 ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-400"
+            }`}>
+              {traces.length} traces
+            </span>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-shrink-0">
           {score !== undefined && (
-            <span className={`text-sm font-semibold tabular-nums ${scoreColor}`}>
+            <span className={`text-sm font-bold tabular-nums ${scoreColor}`}>
               {Math.round(score * 100)}%
             </span>
           )}
           {result?.refinement && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+            <span className="rounded-full bg-amber-100 border border-amber-200 px-2.5 py-0.5 text-xs font-medium text-amber-700">
               Refined
             </span>
           )}
           {result && !result.refinement && (
-            <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+            <span className="rounded-full bg-green-100 border border-green-200 px-2.5 py-0.5 text-xs font-medium text-green-700">
               Passed
             </span>
           )}
           <svg
-            className={`h-4 w-4 text-gray-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+            className={`h-4 w-4 text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -334,23 +411,23 @@ function AgentCard({
 
       {/* Expanded content */}
       {isExpanded && (
-        <div className="border-t border-gray-100 px-5 py-4 space-y-6">
+        <div className="border-t border-slate-100 divide-y divide-slate-100">
           {/* Traces */}
           {traces.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            <div className="px-5 py-4 space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Scraped Traces ({traces.length})
               </h3>
               <div className="space-y-2">
                 {traces.map((trace, i) => {
                   const agentLog = trace.agents[agentName];
                   return (
-                    <div key={i} className="rounded-lg border border-blue-100 bg-blue-50 px-4 py-3 space-y-2">
+                    <div key={i} className="rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50/40 px-4 py-3 space-y-1.5">
                       <div className="flex items-center justify-between">
                         <p className="text-xs font-medium text-blue-700">
                           {trace.input ? `"${trace.input}"` : `Trace ${i + 1}`}
                         </p>
-                        <span className="text-xs text-blue-400">
+                        <span className="text-xs text-blue-400 font-mono">
                           {trace.execution_order.join(" → ")}
                         </span>
                       </div>
@@ -358,11 +435,12 @@ function AgentCard({
                         <div className="space-y-1">
                           {agentLog.tool_calls.length > 0 && (
                             <p className="text-xs text-blue-600">
-                              Tools called: {agentLog.tool_calls.map((tc) => tc.tool).join(", ")}
+                              <span className="font-medium">Tools:</span>{" "}
+                              {agentLog.tool_calls.map((tc) => tc.tool).join(", ")}
                             </p>
                           )}
                           {agentLog.output && (
-                            <p className="text-xs text-gray-600 line-clamp-2">{agentLog.output}</p>
+                            <p className="text-xs text-slate-600 line-clamp-2">{agentLog.output}</p>
                           )}
                         </div>
                       )}
@@ -373,30 +451,32 @@ function AgentCard({
             </div>
           )}
           {traces.length === 0 && (
-            <p className="text-xs text-gray-400">No trace logs found in repo for this agent.</p>
+            <div className="px-5 py-4">
+              <p className="text-xs text-slate-400">No trace logs found in repo for this agent.</p>
+            </div>
           )}
 
           {/* Blueprint */}
-          <div className="space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Blueprint</h3>
+          <div className="px-5 py-4 space-y-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Blueprint</h3>
 
-            <div className="space-y-1">
-              <span className="text-xs font-medium uppercase tracking-wide text-gray-400">System Prompt</span>
-              <pre className="whitespace-pre-wrap rounded-lg bg-gray-50 border border-gray-200 p-4 text-sm text-gray-800 font-mono leading-relaxed">
+            <div className="space-y-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">System Prompt</span>
+              <pre className="whitespace-pre-wrap rounded-xl bg-slate-900 border border-slate-800 p-4 text-xs text-slate-300 font-mono leading-relaxed">
                 {blueprint.agent.system_prompt}
               </pre>
             </div>
 
             {blueprint.agent.tools && blueprint.agent.tools.length > 0 && (
               <div className="space-y-2">
-                <span className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                   Tools ({blueprint.agent.tools.length})
                 </span>
-                <div className="space-y-1">
+                <div className="grid gap-2">
                   {blueprint.agent.tools.map((tool, i) => (
-                    <div key={i} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-                      <p className="text-sm font-medium text-gray-900">{tool.name}</p>
-                      <p className="text-sm text-gray-500">{tool.description}</p>
+                    <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                      <p className="text-sm font-medium text-slate-900">{tool.name}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{tool.description}</p>
                     </div>
                   ))}
                 </div>
@@ -404,20 +484,20 @@ function AgentCard({
             )}
 
             <div className="space-y-2">
-              <span className="text-xs font-medium uppercase tracking-wide text-gray-400">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                 Test Cases ({blueprint.test_cases.length})
               </span>
-              <div className="space-y-1">
+              <div className="grid gap-2">
                 {blueprint.test_cases.map((tc, i) => (
-                  <div key={i} className="rounded-lg border border-gray-200 bg-white px-3 py-2 space-y-1">
+                  <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-1">
                     {tc.description && (
-                      <p className="text-xs text-gray-400">{tc.description}</p>
+                      <p className="text-xs text-slate-400">{tc.description}</p>
                     )}
-                    <p className="text-sm text-gray-900">
+                    <p className="text-sm text-slate-900">
                       <span className="font-medium">Input: </span>{tc.input}
                     </p>
                     {tc.expected_behavior && (
-                      <p className="text-sm text-gray-500">
+                      <p className="text-sm text-slate-500">
                         <span className="font-medium">Expected: </span>{tc.expected_behavior}
                       </p>
                     )}
@@ -429,35 +509,35 @@ function AgentCard({
 
           {/* Evaluation results */}
           {result && (
-            <div className="space-y-4 pt-4 border-t border-gray-100">
+            <div className="px-5 py-4 space-y-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Evaluation</h3>
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Evaluation</h3>
                 <ScoreBadge score={result.evaluation.overall_score} />
               </div>
 
-              <p className="text-sm text-gray-700">{result.evaluation.summary}</p>
+              <p className="text-sm text-slate-700">{result.evaluation.summary}</p>
 
               <div className="space-y-2">
                 {result.evaluation.test_results.map((tr, i) => (
                   <div
                     key={i}
-                    className={`rounded-lg border px-4 py-3 space-y-1 ${
+                    className={`rounded-xl border px-4 py-3 space-y-1.5 ${
                       tr.passed
-                        ? "border-green-200 bg-green-50"
-                        : "border-red-200 bg-red-50"
+                        ? "border-green-200 bg-gradient-to-r from-green-50 to-emerald-50/40"
+                        : "border-red-200 bg-gradient-to-r from-red-50 to-rose-50/40"
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-gray-900">
+                      <p className="text-sm font-medium text-slate-900">
                         {tr.test_case_description}
                       </p>
-                      <span className={`text-sm font-semibold tabular-nums ${tr.passed ? "text-green-600" : "text-red-600"}`}>
+                      <span className={`text-sm font-bold tabular-nums ${tr.passed ? "text-green-600" : "text-red-600"}`}>
                         {Math.round(tr.score * 100)}%
                       </span>
                     </div>
-                    <p className="text-sm text-gray-600">{tr.reasoning}</p>
+                    <p className="text-sm text-slate-600">{tr.reasoning}</p>
                     {tr.issues.length > 0 && (
-                      <ul className="list-disc list-inside text-sm text-red-700 space-y-0.5 pt-1">
+                      <ul className="list-disc list-inside text-xs text-red-700 space-y-0.5 pt-0.5">
                         {tr.issues.map((issue, j) => (
                           <li key={j}>{issue}</li>
                         ))}
@@ -471,28 +551,28 @@ function AgentCard({
 
           {/* Refinement */}
           {result?.refinement && (
-            <div className="space-y-4 pt-4 border-t border-gray-100">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-gray-400">Refined Prompt</h3>
+            <div className="px-5 py-4 space-y-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Refined Prompt</h3>
 
-              <p className="text-sm text-gray-700">{result.refinement.summary}</p>
+              <p className="text-sm text-slate-700">{result.refinement.summary}</p>
 
-              <pre className="whitespace-pre-wrap rounded-lg bg-amber-50 border border-amber-200 p-4 text-sm text-gray-800 font-mono leading-relaxed">
+              <pre className="whitespace-pre-wrap rounded-xl bg-slate-900 border border-amber-800/30 p-4 text-xs text-amber-200/90 font-mono leading-relaxed">
                 {result.refinement.refined_prompt}
               </pre>
 
               {result.refinement.changes.length > 0 && (
                 <div className="space-y-2">
-                  <span className="text-xs font-medium uppercase tracking-wide text-gray-400">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
                     Changes ({result.refinement.changes.length})
                   </span>
-                  <div className="space-y-1">
+                  <div className="grid gap-2">
                     {result.refinement.changes.map((change, i) => (
-                      <div key={i} className="rounded-lg border border-gray-200 bg-white px-3 py-2 space-y-1">
-                        <p className="text-sm font-medium text-gray-900">{change.change_description}</p>
-                        <p className="text-xs text-gray-500">
+                      <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-1">
+                        <p className="text-sm font-medium text-slate-900">{change.change_description}</p>
+                        <p className="text-xs text-slate-500">
                           <span className="font-medium">Issue: </span>{change.issue_reference}
                         </p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-xs text-slate-500">
                           <span className="font-medium">Why: </span>{change.reasoning}
                         </p>
                       </div>
@@ -501,7 +581,7 @@ function AgentCard({
                 </div>
               )}
 
-              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+              <div className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50/40 px-4 py-3">
                 <p className="text-sm text-amber-800">
                   <span className="font-medium">Expected impact: </span>
                   {result.refinement.expected_impact}
@@ -519,12 +599,12 @@ function ScoreBadge({ score }: { score: number }) {
   const pct = Math.round(score * 100);
   const color =
     score >= 0.7
-      ? "bg-green-100 text-green-700"
+      ? "bg-green-100 text-green-700 border-green-200"
       : score >= 0.4
-      ? "bg-yellow-100 text-yellow-700"
-      : "bg-red-100 text-red-700";
+      ? "bg-yellow-100 text-yellow-700 border-yellow-200"
+      : "bg-red-100 text-red-700 border-red-200";
   return (
-    <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold tabular-nums ${color}`}>
+    <span className={`rounded-full border px-3 py-0.5 text-xs font-bold tabular-nums ${color}`}>
       {pct}%
     </span>
   );
