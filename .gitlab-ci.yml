@@ -48,7 +48,7 @@ repo-sanity:
   stage: validate
   extends: .python-job
   script:
-    - echo "Static sanity checks for backend routing and schemas..."
+    - echo "Static sanity checks for backend routing and schema..."
     - python -m compileall -q backend/app
     - grep -nE 'include_router\(health\.router, prefix="/api"' backend/app/main.py
     - grep -nE 'include_router\(evaluation\.router, prefix="/api/v1"' backend/app/main.py
