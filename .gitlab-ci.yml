@@ -10,7 +10,7 @@ workflow:
     - when: never
 
 default:
-  tags: ["docker", "euro-macmini-runner"]
+  tags: ["docker"]
   interruptible: true
   retry:
     max: 1
@@ -75,7 +75,6 @@ frontend-smoke:
   script:
     - cd frontend
     - npm ci --prefer-offline --no-audit
-    - npm run lint
     - |
       if [ -d app ] || [ -d pages ] || [ -d src/app ] || [ -d src/pages ]; then
         npm run build

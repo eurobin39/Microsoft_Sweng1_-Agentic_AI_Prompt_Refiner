@@ -13,8 +13,8 @@ RUN npm install
 # Copy the rest of the frontend code
 COPY . .
 
-# Expose Vite dev server port
+# Expose Next.js dev server port
 EXPOSE 3000
 
 # Start dev server
-CMD ["npm", "run", "dev", "--", "--host"]
+CMD ["npm", "run", "dev"]
