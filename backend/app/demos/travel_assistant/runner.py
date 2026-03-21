@@ -1,146 +1,59 @@
 """
-Travel Assistant — main runner.
+Travel Assistant — async runner using the handoff workflow.
 
-Provides a unified interface for running any of the three workflow patterns:
-  - handoff: triage routes to specialist agents who can hand off to each other
-  - concurrent: multiple agents work in parallel on the same request
-  - sequential: agents chain in sequence (e.g. weather → packing)
-
-All workflows produce structured JSON traces for evaluator consumption.
+Streams workflow events into WorkflowTracer for structured tracing.
 """
 
-import os
 import asyncio
 import logging
-from typing import Any, cast
+import os
+from typing import Any
 
-from agent_framework import (
-    AgentResponseUpdate,
-    ChatMessage,
-    WorkflowOutputEvent,
-)
-from agent_framework.azure import AzureOpenAIChatClient
 from azure.identity import AzureCliCredential
-from dotenv import load_dotenv
+from agent_framework import WorkflowOutputEvent
+from agent_framework.azure import AzureOpenAIChatClient
 
-from .workflows import build_handoff_workflow, build_concurrent_workflow, build_sequential_workflow, build_graph_workflow
 from .logger import WorkflowTracer, setup_logging
+from .workflow import build_handoff_workflow
 
-load_dotenv()
 
-
-def get_chat_client() -> AzureOpenAIChatClient:
-    """
-    Create an AzureOpenAIChatClient from environment variables.
-
-    Supports API key auth (AZURE_OPENAI_API_KEY) or Azure CLI credential (az login).
-    """
+def _get_chat_client() -> AzureOpenAIChatClient:
     endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
     api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
-    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "gpt-4o-mini")
-
     if api_key:
-        return AzureOpenAIChatClient(
-            api_key=api_key,
-            endpoint=endpoint,
-            deployment_name=deployment,
-        )
-    else:
-        return AzureOpenAIChatClient(
-            credential=AzureCliCredential(),
-            endpoint=endpoint,
-            deployment_name=deployment,
-        )
+        return AzureOpenAIChatClient(api_key=api_key, endpoint=endpoint, deployment_name=deployment)
+    return AzureOpenAIChatClient(credential=AzureCliCredential(), endpoint=endpoint, deployment_name=deployment)
 
 
 async def run_workflow(
     user_request: str,
-    mode: str = "handoff",
-    stream: bool = True,
     log_file: str | None = None,
     trace_dir: str = "travel_assistant/log/traces",
 ) -> dict[str, Any]:
-    """
-    Run a travel assistant workflow with structured tracing.
-
-    Args:
-        user_request: The user's travel question.
-        mode: Workflow pattern — "handoff", "concurrent", "sequential", or "graph".
-        stream: If True, print agent responses as they stream.
-        log_file: Optional path for log file.
-        trace_dir: Directory to save JSON traces.
-
-    Returns:
-        The full trace dict (also saved to trace_dir as JSON).
-    """
     setup_logging(level=logging.INFO, log_file=log_file)
 
-    # Build the requested workflow
-    if mode == "graph":
-        workflow = build_graph_workflow()
-        workflow_input: Any = {"user_request": user_request}
-    else:
-        chat_client = get_chat_client()
-        if mode == "handoff":
-            workflow = build_handoff_workflow(chat_client)
-        elif mode == "concurrent":
-            workflow = build_concurrent_workflow(chat_client)
-        elif mode == "sequential":
-            workflow = build_sequential_workflow(chat_client)
-        else:
-            raise ValueError(f"Unknown mode: {mode}. Choose 'handoff', 'concurrent', 'sequential', or 'graph'.")
-        workflow_input = user_request
+    chat_client = _get_chat_client()
+    workflow = build_handoff_workflow(chat_client)
+    tracer = WorkflowTracer(user_input=user_request, mode="handoff")
 
-    # Set up tracer
-    tracer = WorkflowTracer(user_input=user_request, mode=mode)
-
-    # Run with streaming
     final_output = ""
-    last_response_id: str | None = None
 
-    async for event in workflow.run_stream(workflow_input):
+    async for event in workflow.run_stream(user_request):
         tracer.capture(event)
+        if isinstance(event, WorkflowOutputEvent):
+            final_output = getattr(event, "text", "") or str(event)
 
-        if stream and isinstance(event, WorkflowOutputEvent):
-            data = event.data
-            if isinstance(data, AgentResponseUpdate):
-                rid = data.response_id
-                if rid != last_response_id:
-                    if last_response_id is not None:
-                        print()
-                    author = data.author_name or "agent"
-                    print(f"\n🤖 [{author}]: ", end="", flush=True)
-                    last_response_id = rid
-                print(data.text, end="", flush=True)
-
-            elif isinstance(data, list):
-                messages = cast(list[ChatMessage], data)
-                final_output = "\n\n".join(
-                    f"[{m.author_name or m.role}]: {m.text}" for m in messages if m.text
-                )
-
-            elif isinstance(data, str):
-                final_output = data
-
-    if stream:
-        print("\n")
-
-    # Finalise trace
     tracer.set_final_output(final_output)
     tracer.save(trace_dir)
     tracer.print_summary()
-
-    logging.getLogger("travel_assistant").info(tracer.summary())
 
     return tracer.get_trace()
 
 
 def run_sync(
     user_request: str,
-    mode: str = "handoff",
-    stream: bool = True,
     log_file: str | None = None,
     trace_dir: str = "traces",
 ) -> dict[str, Any]:
-    """Synchronous wrapper."""
-    return asyncio.run(run_workflow(user_request, mode, stream, log_file, trace_dir))
+    return asyncio.run(run_workflow(user_request, log_file=log_file, trace_dir=trace_dir))

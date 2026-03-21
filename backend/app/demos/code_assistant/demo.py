@@ -1,5 +1,7 @@
+import json
 import os
 import sys
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -8,22 +10,12 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 load_dotenv()
 
 from app.demos.code_assistant.runner import run_sync
+from app.models.trace_logs import TraceLog
 
 
-SAMPLE_CODE = """
-def calculate(x, y):
-    return x + y
-
-def process_data(items):
-    result = []
-    for item in items:
-        if item > 0:
-            result.append(item * 2)
-    return result
-"""
-
-TRACE_DIR = "code_assistant/log/traces"
-LOG_FILE = "code_assistant/log/code_assistant.log"
+GROUND_TRUTH_PATH = Path(__file__).parent / "ground_truth.json"
+TRACE_DIR = str(Path(__file__).parent / "log" / "traces")
+LOG_FILE = str(Path(__file__).parent / "log" / "code_assistant.log")
 
 
 def header(title: str) -> None:
@@ -32,29 +24,25 @@ def header(title: str) -> None:
     print("=" * 80 + "\n")
 
 
-def run_demo() -> None:
+def run_demo() -> list[TraceLog]:
     header("CODE ASSISTANT DEMO — HANDOFF WORKFLOW")
-    print("Sample code:")
-    print("-" * 40)
-    print(SAMPLE_CODE)
-    print("-" * 40)
+
+    ground_truth = json.loads(GROUND_TRUTH_PATH.read_text())
+    code = ground_truth["code"]
+    test_cases = ground_truth["test_cases"]
+
+    print(f"Running {len(test_cases)} scenarios from ground truth.")
     print(f"Traces will be saved to: {TRACE_DIR}/\n")
 
-    scenarios = [
-        "What does this code do?",
-        "Refactor this to improve readability and add type hints.",
-        "Add Google-style docstrings to this code.",
-        "Refactor this code and then add full documentation.",
-        "Can you help me understand what's going on here?",
-        "Make this code more efficient.",
-    ]
-
-    for i, request in enumerate(scenarios, 1):
-        header(f"TEST {i}: {request}")
-        run_sync(request, SAMPLE_CODE, log_file=LOG_FILE, trace_dir=TRACE_DIR)
+    traces: list[TraceLog] = []
+    for i, tc in enumerate(test_cases, 1):
+        header(f"TEST {i}: {tc['user_request']}")
+        trace_dict = run_sync(tc["user_request"], code, log_file=LOG_FILE, trace_dir=TRACE_DIR)
+        traces.append(TraceLog.model_validate(trace_dict))
 
     header("DEMO COMPLETE")
-    print(f"Traces saved to: {TRACE_DIR}/\n")
+    print(f"Saved {len(traces)} traces to: {TRACE_DIR}/\n")
+    return traces
 
 
 if __name__ == "__main__":

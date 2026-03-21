@@ -6,13 +6,24 @@ Streams workflow events into WorkflowTracer for structured tracing.
 
 import asyncio
 import logging
+import os
 from typing import Any
 
+from azure.identity import AzureCliCredential
 from agent_framework import WorkflowOutputEvent
+from agent_framework.azure import AzureOpenAIChatClient
 
-from app.core.runner import get_chat_client
 from .logger import WorkflowTracer, setup_logging
-from .workflows import build_handoff_workflow
+from .workflow import build_handoff_workflow
+
+
+def _get_chat_client() -> AzureOpenAIChatClient:
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
+    api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
+    if api_key:
+        return AzureOpenAIChatClient(api_key=api_key, endpoint=endpoint, deployment_name=deployment)
+    return AzureOpenAIChatClient(credential=AzureCliCredential(), endpoint=endpoint, deployment_name=deployment)
 
 
 async def run_workflow(
@@ -23,7 +34,7 @@ async def run_workflow(
 ) -> dict[str, Any]:
     setup_logging(level=logging.INFO, log_file=log_file)
 
-    chat_client = get_chat_client()
+    chat_client = _get_chat_client()
     workflow = build_handoff_workflow(chat_client)
     tracer = WorkflowTracer(user_input=user_request, mode="handoff")
 

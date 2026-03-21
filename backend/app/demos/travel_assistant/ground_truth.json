@@ -1,60 +1,73 @@
 {
-  "description": "Ground truth for the travel_assistant demo — ideal agent outputs for 'What should I pack for Tokyo in March?' The actual system prompts are intentionally shallow, so the judge compares these ideal outputs against what the dumbed-down agents actually produce.",
-  "test_case": {
-    "user_request": "What should I pack for Tokyo in March?",
-    "destination": "Tokyo",
-    "month": "March"
-  },
-  "ideal_trace": {
-    "mode": "graph",
-    "agents": {
-      "weather_agent": {
-        "instructions": "Tell the user about the weather at their destination. Use get_weather for now and get_forecast for the week ahead.",
-        "tools_available": ["get_weather", "get_forecast"],
-        "tool_calls": [
-          {
-            "tool": "get_weather",
-            "arguments": {"destination": "Tokyo"},
-            "result": "Current conditions returned by live weather API"
-          },
-          {
-            "tool": "get_forecast",
-            "arguments": {"destination": "Tokyo", "days": 5},
-            "result": "5-day forecast returned by live weather API"
-          }
+  "description": "Ground truth for the travel_assistant demo. Agent prompts are intentionally shallow so the judge finds gaps and the refiner can improve them. This file is a rich reference document showing ideal agent behavior — not used directly by demo.py.",
+  "test_cases": [
+    {
+      "user_request": "What's the weather like in Tokyo right now, and what should I pack for a week?",
+      "expected_agents": ["triage_agent", "weather_agent", "packing_agent"],
+      "expected_tool_calls": {
+        "weather_agent": [
+          {"tool": "get_weather", "arguments": {"destination": "Tokyo"}},
+          {"tool": "get_forecast", "arguments": {"destination": "Tokyo", "days": 5}}
         ],
-        "output": "Tokyo in March sits right at the end of winter moving into spring. Expect temperatures between 8°C and 14°C (46–57°F) — cool mornings and mild afternoons. Humidity is around 60%, which feels comfortable but can make evenings feel colder than the thermometer suggests. Rain is likely: March averages about 120mm over 12 rainy days, so a waterproof layer is essential. The second half of March often sees the first cherry blossom (sakura) blooms, which brings crowds to parks like Ueno and Shinjuku Gyoen. Wind can be brisk, especially in open areas. Layer up and carry an umbrella.",
-        "duration_ms": 1800
+        "packing_agent": [
+          {"tool": "get_packing_list", "arguments": {"weather_summary": "<current conditions from weather_agent>", "trip_type": "city"}}
+        ]
       },
-      "packing_agent": {
-        "instructions": "Help the user figure out what to pack based on the weather and their trip type.",
-        "tools_available": ["get_packing_list", "check_luggage_restrictions"],
-        "tool_calls": [
-          {
-            "tool": "get_packing_list",
-            "arguments": {"weather_summary": "cool, rainy, 8-14C, humid", "trip_type": "city"},
-            "result": "Packing list returned by mock data"
-          }
-        ],
-        "output": "## Clothing\n- 3–4 light base layers (long-sleeve t-shirts or thin merino wool)\n- 1 mid-layer fleece or light jumper\n- 1 waterproof jacket (essential — March rain is frequent)\n- 1 pair of smart-casual trousers and 1 pair of jeans\n- Comfortable walking shoes with good grip (you will walk a lot; avoid open-toed shoes for temple visits)\n- A light scarf for wind and cool evenings\n\n## Toiletries\n- Standard toiletries (note: Japan has 100ml carry-on rules identical to EU/US)\n- Small pack of tissues — public restrooms often lack paper towels\n- Hand sanitiser (widely available in Japan but handy in transit)\n\n## Documents & Money\n- Passport + return flight details\n- IC card (Suica or Pasmo) for trains and buses — load at the airport on arrival\n- Cash yen: Japan is still heavily cash-based outside central Tokyo; ATMs at 7-Eleven/Post Office are foreigner-friendly\n- Travel insurance documents\n\n## Electronics\n- Phone + charger + portable battery pack (Tokyo days are long)\n- Universal adapter (Japan uses Type A plugs, same as US, so EU travellers need an adapter)\n- Earphones for long train journeys\n\n## Tokyo-specific tips\n- Pack light-coloured clothes for cherry blossom picnics\n- Bring a small foldable bag for shopping — plastic bags are charged in Japan\n- Slip-on shoes save time at temple entries where shoes must be removed",
-        "duration_ms": 1500
-      }
+      "expected_agent_outputs": {
+        "triage_agent": "Routes to weather_agent first, which then hands off to packing_agent.",
+        "weather_agent": "Provides current temperature in Celsius and Fahrenheit, weather condition, humidity, wind speed, and chance of rain. References cherry blossom season context if March. Hands off to packing_agent with the weather summary.",
+        "packing_agent": "Returns a categorised packing list (clothing, toiletries, documents, electronics) tailored to the actual weather conditions. Includes Tokyo-specific tips: IC card / Suica for transport, cash yen, slip-on shoes for temple visits."
+      },
+      "expected_behavior": "triage routes to weather, weather calls get_weather and get_forecast, then hands off to packing. packing calls get_packing_list with the real weather summary and returns a specific, categorised list.",
+      "judge_notes": [
+        "weather_agent may give a generic response without calling both get_weather AND get_forecast",
+        "weather_agent may not hand off to packing_agent — it may just answer and stop",
+        "packing_agent may produce a generic city packing list with no Tokyo-specific tips",
+        "packing_agent may not pass the actual weather summary to get_packing_list",
+        "triage_agent may skip routing and try to answer the question itself"
+      ]
     },
-    "execution_order": ["weather_agent", "packing_agent"],
-    "handoffs": [],
-    "final_output": "Ideal: weather output explicitly names March temperature range (8–14°C), mentions 60% humidity and cherry blossom season context, and flags light rain likelihood. Packing output is organised by category (clothing/toiletries/documents/electronics), uses Tokyo-specific tips (IC card, cash, no open-toe shoes for temples, plastic bag charge), and recommends layering rather than a generic warm-coat approach.",
-    "duration_ms": 3300
-  },
-  "judge_notes": {
-    "common_gaps_from_shallow_prompts": [
-      "weather_agent may give a generic temperature range without mentioning the 8–14°C March specifics",
-      "weather_agent may omit the cherry blossom season context entirely",
-      "weather_agent may not mention the 60% humidity or rain frequency",
-      "packing_agent may produce a generic city packing list with no Tokyo-specific tips",
-      "packing_agent may omit the IC card / cash recommendation",
-      "packing_agent may not suggest slip-on shoes for temple visits",
-      "packing_agent may generate an excessively long generic list (over-the-top) with irrelevant items",
-      "packing_agent may not organise by category (clothing/toiletries/documents/electronics)"
-    ]
-  }
+    {
+      "user_request": "Find me flights from Dublin to Barcelona and some hotels for 3 nights.",
+      "expected_agents": ["triage_agent", "booking_agent"],
+      "expected_tool_calls": {
+        "booking_agent": [
+          {"tool": "search_flights", "arguments": {"origin": "Dublin", "destination": "Barcelona", "date": "<user date or default>"}},
+          {"tool": "search_hotels", "arguments": {"destination": "Barcelona", "checkin": "<date>", "nights": 3}}
+        ]
+      },
+      "expected_agent_outputs": {
+        "triage_agent": "Routes directly to booking_agent.",
+        "booking_agent": "Lists available flights with airline, departure time, duration, stops, and price in EUR. Lists hotels with star rating, price per night, and total cost for 3 nights."
+      },
+      "expected_behavior": "triage routes to booking_agent, which calls both search_flights and search_hotels and returns structured results for both.",
+      "judge_notes": [
+        "booking_agent may call only one tool (either flights or hotels) and miss the other",
+        "booking_agent may not parse 'Dublin' as the origin — it may default to an unknown origin",
+        "booking_agent may present results as plain text with no structure rather than listing each option",
+        "triage_agent may try to answer without routing to booking_agent"
+      ]
+    },
+    {
+      "user_request": "What are some good activities and local tips for visiting Lisbon?",
+      "expected_agents": ["triage_agent", "activities_agent"],
+      "expected_tool_calls": {
+        "activities_agent": [
+          {"tool": "get_activities", "arguments": {"destination": "Lisbon", "category": "all"}},
+          {"tool": "get_local_tips", "arguments": {"destination": "Lisbon"}}
+        ]
+      },
+      "expected_agent_outputs": {
+        "triage_agent": "Routes to activities_agent.",
+        "activities_agent": "Lists activities by category (sightseeing, food, outdoor, culture) with name, duration, price, and rating. Also provides local tips covering currency, tipping norms, safety, and transport."
+      },
+      "expected_behavior": "triage routes to activities_agent, which calls both get_activities and get_local_tips and presents results across all categories.",
+      "judge_notes": [
+        "activities_agent may call only get_activities and forget get_local_tips",
+        "activities_agent may not pass category='all' and only return one category",
+        "activities_agent may not use the destination from the user request — it may leave it blank",
+        "triage_agent may route to weather_agent instead of activities_agent"
+      ]
+    }
+  ]
 }

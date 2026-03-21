@@ -4,8 +4,8 @@ from typing import Any
 
 from agent_framework import WorkflowBuilder, WorkflowContext, executor
 
-from agent_framework_utils import create_agent
-from ..agents import collect_info, analyze_job, write_resume, review_resume
+from .definitions import _create_agent as create_agent
+from .definitions import collect_info, analyze_job, write_resume, review_resume
 
 
 def _mode_is(*modes: str):

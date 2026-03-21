@@ -45,20 +45,10 @@ def setup_logging(level: int = logging.INFO, log_file: str | None = None) -> Non
 
 
 _AGENT_INSTRUCTIONS = {
-    "code_triage": (
-        "Read the user's request and hand off to the right specialist: "
-        "code_explainer, code_refactor, or code_documenter."
-    ),
-    "code_explainer": (
-        "Explain what the code does in plain English using extract_functions and analyze_code_metrics."
-    ),
-    "code_refactor": (
-        "Refactor the code to be cleaner using extract_functions and analyze_code_metrics. "
-        "Hand off to code_documenter if documentation is also requested."
-    ),
-    "code_documenter": (
-        "Add docstrings and comments using check_docstrings and extract_functions."
-    ),
+    "code_triage": "Read the request and route to the right agent.",
+    "code_explainer": "Explain what the code does.",
+    "code_refactor": "Improve the code. Hand off to code_documenter if documentation is needed.",
+    "code_documenter": "Add comments and docstrings to the code.",
 }
 
 _AGENT_TOOLS = {

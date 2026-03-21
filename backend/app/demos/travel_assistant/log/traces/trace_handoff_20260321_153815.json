@@ -1,0 +1,55 @@
+{
+  "timestamp": "2026-03-21T15:38:03.993341",
+  "mode": "handoff",
+  "input": "What are some good activities and local tips for visiting Lisbon?",
+  "agents": {
+    "triage_agent": {
+      "instructions": "Route the user to the right agent.",
+      "tools_available": [],
+      "tool_calls": [
+        {
+          "tool": "handoff_to_activities_agent",
+          "arguments": "",
+          "result": {
+            "handoff_to": "activities_agent"
+          }
+        }
+      ],
+      "output": "",
+      "duration_ms": null
+    },
+    "activities_agent": {
+      "instructions": "Suggest things to do at the destination.",
+      "tools_available": [
+        "get_activities",
+        "get_local_tips"
+      ],
+      "tool_calls": [
+        {
+          "tool": "get_activities",
+          "arguments": "",
+          "result": "{\n  \"destination\": \"Lisbon\",\n  \"activities\": {\n    \"sightseeing\": [\n      {\n        \"name\": \"Walking Tour of Lisbon\",\n        \"duration\": \"3h\",\n        \"price_usd\": 25,\n        \"rating\": 4.7\n      },\n      {\n        \"name\": \"Lisbon Historical Museum\",\n        \"duration\": \"2h\",\n        \"price_usd\": 15,\n        \"rating\": 4.5\n      }\n    ],\n    \"food\": [\n      {\n        \"name\": \"Local Food Tour in Lisbon\",\n        \"duration\": \"3.5h\",\n        \"price_usd\": 65,\n        \"rating\": 4.9\n      },\n      {\n        \"name\": \"Street Food Market Visit\",\n        \"duration\": \"2h\",\n        \"price_usd\": 0,\n        \"rating\": 4.4\n      }\n    ],\n    \"outdoor\": [\n      {\n        \"name\": \"Day Hike near Lisbon\",\n        \"duration\": \"5h\",\n        \"price_usd\": 40,\n        \"rating\": 4.7\n      },\n      {\n        \"name\": \"Bike Tour\",\n        \"duration\": \"3h\",\n        \"price_usd\": 35,\n        \"rating\": 4.5\n      }\n    ],\n    \"culture\": [\n      {\n        \"name\": \"Live Music / Theatre\",\n        \"duration\": \"2.5h\",\n        \"price_usd\": 45,\n        \"rating\": 4.6\n      },\n      {\n        \"name\": \"Art Gallery Crawl\",\n        \"duration\": \"3h\",\n        \"price_usd\": 20,\n        \"rating\": 4.4\n      }\n    ]\n  }\n}"
+        },
+        {
+          "tool": "get_local_tips",
+          "arguments": "",
+          "result": "{\n  \"destination\": \"Lisbon\",\n  \"tips\": {\n    \"currency\": \"Check XE.com for current rates\",\n    \"tipping\": \"10-15% at restaurants is standard in most countries\",\n    \"safety\": \"Generally safe for tourists. Keep valuables secure in crowded areas.\",\n    \"transport\": \"Public transport in Lisbon is recommended.\"\n  }\n}"
+        }
+      ],
+      "output": "Lisbon is a fantastic city to explore, blending history, culture, food, and scenic views. Here are some **great activities** and **useful local tips** to help you make the most of your visit:\n\n---\n\n## 🌍 Top Things to Do in Lisbon\n\n### 🏛️ Sightseeing & History\n- **Walking Tour of Lisbon (3h)** – A great introduction to neighborhoods like Alfama, Baixa, and Bairro Alto.  \n- **Lisbon Historical Museum (2h)** – Learn about the city’s maritime past and cultural heritage.\n\n### 🍽️ Food & Drink\n- **Local Food Tour (3.5h)** – Sample classics like *bacalhau*, *petiscos*, and *pastéis de nata*.  \n- **Street Food & Markets** – Visit places like Time Out Market for casual bites and local flavors.\n\n### 🚲 Outdoor Activities\n- **Bike Tour (3h)** – Especially enjoyable along the Tagus River waterfront.  \n- **Day Hike Near Lisbon (5h)** – Head to nearby Sintra or coastal trails for nature and views.\n\n### 🎭 Culture & Arts\n- **Live Music or Theatre** – Experience traditional **Fado** music in Alfama or Bairro Alto.  \n- **Art Gallery Crawl** – Explore contemporary art spaces around Chiado and Belém.\n\n---\n\n## 💡 Local Tips for Visiting Lisbon\n\n- **Getting Around:** Public transport (trams, metro, buses) is affordable and efficient. The iconic Tram 28 is scenic but often crowded—go early.  \n- **Safety:** Lisbon is generally very safe, but watch out for pickpockets in busy tourist areas.  \n- **Tipping:** Not mandatory, but **10–15%** in restaurants is appreciated for good service.  \n- **Currency:** Portugal uses the **Euro (€)**. Cards are widely accepted, but small cash is handy.  \n- **Footwear:** Bring comfortable shoes—Lisbon’s hills and cobblestone streets can be tough on your feet.\n\n---\n\nIf you’d like, I can tailor recommendations based on your travel style (foodie, history lover, outdoorsy, relaxed, etc.) or help you book tours and experiences. 😊",
+      "duration_ms": 9589
+    }
+  },
+  "execution_order": [
+    "triage_agent",
+    "activities_agent"
+  ],
+  "handoffs": [
+    {
+      "from": "triage_agent",
+      "to": "activities_agent"
+    }
+  ],
+  "final_output": "",
+  "duration_ms": 11790
+}

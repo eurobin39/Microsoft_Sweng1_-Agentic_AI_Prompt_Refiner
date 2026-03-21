@@ -82,15 +82,7 @@ def check_docstrings(code: str) -> str:
 def create_triage_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
     return ChatAgent(
         name="code_triage",
-        instructions=(
-            "You are a code assistant coordinator. Read the user's request and the code they provide, "
-            "then hand off to the right specialist:\n"
-            "- code_explainer: if they want to understand what the code does\n"
-            "- code_refactor: if they want cleaner, more readable, or more efficient code\n"
-            "- code_documenter: if they want docstrings or comments added\n"
-            "For requests that need both refactoring and documentation, hand off to code_refactor first — "
-            "it will chain to code_documenter when done."
-        ),
+        instructions="Read the request and route to the right agent.",
         chat_client=chat_client,
     )
 
@@ -98,12 +90,7 @@ def create_triage_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
 def create_explainer_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
     return ChatAgent(
         name="code_explainer",
-        instructions=(
-            "Explain what the provided code does in plain English. "
-            "Call extract_functions to identify the structure, and analyze_code_metrics to understand complexity. "
-            "Give a clear explanation covering what each function does, its inputs and outputs, "
-            "and any notable patterns or logic worth calling out."
-        ),
+        instructions="Explain what the code does.",
         chat_client=chat_client,
         tools=[extract_functions, analyze_code_metrics],
     )
@@ -112,12 +99,7 @@ def create_explainer_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
 def create_refactor_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
     return ChatAgent(
         name="code_refactor",
-        instructions=(
-            "Refactor the provided code to be cleaner and easier to read. "
-            "Call extract_functions to understand the current structure and analyze_code_metrics to spot complexity issues. "
-            "Add type hints, use idiomatic Python patterns, and briefly explain each change you made. "
-            "If the user also wants documentation added, hand off to code_documenter after you are done."
-        ),
+        instructions="Improve the code. Hand off to code_documenter if documentation is needed.",
         chat_client=chat_client,
         tools=[extract_functions, analyze_code_metrics],
     )
@@ -126,11 +108,7 @@ def create_refactor_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
 def create_documenter_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
     return ChatAgent(
         name="code_documenter",
-        instructions=(
-            "Add docstrings and inline comments to the provided code. "
-            "Call check_docstrings to identify what is missing, and extract_functions to understand the structure. "
-            "Write Google-style docstrings with Args, Returns, and Examples sections where applicable."
-        ),
+        instructions="Add comments and docstrings to the code.",
         chat_client=chat_client,
         tools=[check_docstrings, extract_functions],
     )
