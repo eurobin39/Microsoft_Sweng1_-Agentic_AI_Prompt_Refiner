@@ -1,4 +1,4 @@
-from agent_framework import ChatAgent
+from agent_framework import ChatAgent, tool
 from agent_framework.azure import AzureOpenAIChatClient
 
 from app.services.judge_tools import save_evaluation_result
