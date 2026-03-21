@@ -16,7 +16,7 @@ Architecture:
 from agent_framework import HandoffBuilder
 from agent_framework.azure import AzureOpenAIChatClient
 
-from ..agents import (
+from .definitions import (
     create_triage_agent,
     create_explainer_agent,
     create_refactor_agent,
