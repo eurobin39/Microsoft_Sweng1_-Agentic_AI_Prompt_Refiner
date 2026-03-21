@@ -1,3 +1,3 @@
-from .graph import build_graph_workflow
+from .handoff import build_handoff_workflow
 
-__all__ = ["build_graph_workflow"]
+__all__ = ["build_handoff_workflow"]

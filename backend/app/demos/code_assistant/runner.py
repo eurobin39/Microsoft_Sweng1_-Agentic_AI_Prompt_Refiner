@@ -1,81 +1,40 @@
 """
-Code Assistant — main runner.
+Code Assistant — async runner using the handoff workflow.
 
-Provides a unified interface for running the graph workflow with structured tracing.
-Agents are called directly so we can record start/end times around each call.
+Streams workflow events into WorkflowTracer for structured tracing.
 """
 
 import asyncio
 import logging
 from typing import Any
 
-from .agents import explain_code, refactor_code, document_code
+from agent_framework import WorkflowOutputEvent
+
+from app.core.runner import get_chat_client
 from .logger import WorkflowTracer, setup_logging
+from .workflows import build_handoff_workflow
 
-_VALID_MODES = ("EXPLAIN", "REFACTOR", "DOCUMENT", "REFACTOR_DOCUMENT")
 
-
-def run_workflow(
+async def run_workflow(
     user_request: str,
     code: str,
-    mode: str = "EXPLAIN",
     log_file: str | None = None,
     trace_dir: str = "code_assistant/log/traces",
 ) -> dict[str, Any]:
-    """
-    Run a code assistant workflow with structured tracing.
-
-    Args:
-        user_request: The user's request (used for routing context).
-        code: The source code to process.
-        mode: Operation mode — "EXPLAIN", "REFACTOR", "DOCUMENT", or "REFACTOR_DOCUMENT".
-        log_file: Optional path for log file.
-        trace_dir: Directory to save JSON traces.
-
-    Returns:
-        The full trace dict (also saved to trace_dir as JSON).
-    """
     setup_logging(level=logging.INFO, log_file=log_file)
 
-    mode = mode.upper()
-    if mode not in _VALID_MODES:
-        raise ValueError(f"Unknown mode: {mode!r}. Choose from {_VALID_MODES}.")
+    chat_client = get_chat_client()
+    workflow = build_handoff_workflow(chat_client)
+    tracer = WorkflowTracer(user_input=user_request, mode="handoff")
 
-    tracer = WorkflowTracer(user_input=user_request, mode="graph")
+    message = f"{user_request}\n\nCode:\n{code}"
+    final_output = ""
 
-    final_sections: list[str] = []
+    async for event in workflow.run_stream(message):
+        tracer.capture(event)
+        if isinstance(event, WorkflowOutputEvent):
+            final_output = getattr(event, "text", "") or str(event)
 
-    if mode == "EXPLAIN":
-        tracer.start_agent("code_explainer")
-        explanation = explain_code(code)
-        tracer.end_agent("code_explainer", explanation)
-        final_sections.append(f"## Explanation\n{explanation}")
-
-    elif mode == "REFACTOR":
-        tracer.start_agent("code_refactor")
-        refactored = refactor_code(code)
-        tracer.end_agent("code_refactor", refactored)
-        final_sections.append(f"## Refactored Code\n{refactored}")
-
-    elif mode == "DOCUMENT":
-        tracer.start_agent("code_documenter")
-        documented = document_code(code)
-        tracer.end_agent("code_documenter", documented)
-        final_sections.append(f"## Documented Code\n{documented}")
-
-    elif mode == "REFACTOR_DOCUMENT":
-        tracer.start_agent("code_refactor")
-        refactored = refactor_code(code)
-        tracer.end_agent("code_refactor", refactored)
-
-        tracer.start_agent("code_documenter")
-        documented = document_code(refactored)
-        tracer.end_agent("code_documenter", documented)
-
-        final_sections.append(f"## Refactored Code\n{refactored}")
-        final_sections.append(f"## Documented Code\n{documented}")
-
-    final_output = "\n\n".join(final_sections)
     tracer.set_final_output(final_output)
     tracer.save(trace_dir)
     tracer.print_summary()
@@ -86,9 +45,7 @@ def run_workflow(
 def run_sync(
     user_request: str,
     code: str,
-    mode: str = "EXPLAIN",
     log_file: str | None = None,
-    trace_dir: str = "traces",
+    trace_dir: str = "code_assistant/log/traces",
 ) -> dict[str, Any]:
-    """Synchronous wrapper (run_workflow is already synchronous; kept for API consistency)."""
-    return run_workflow(user_request, code, mode, log_file, trace_dir)
+    return asyncio.run(run_workflow(user_request, code, log_file=log_file, trace_dir=trace_dir))
