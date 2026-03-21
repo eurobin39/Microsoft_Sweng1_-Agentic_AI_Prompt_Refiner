@@ -1,0 +1,52 @@
+name: Deploy Backend to Azure App Service
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-backend-appservice.yml"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.11"
+  AZURE_WEBAPP_NAME: "${{ secrets.AZURE_WEBAPP_NAME }}"
+  AZURE_WEBAPP_PACKAGE_PATH: "backend"
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run syntax check
+        working-directory: backend
+        run: |
+          python -m compileall app
+
+      - name: Create deployment package
+        run: |
+          cd ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+          zip -r ../release.zip . \
+            -x "venv/*" "__pycache__/*" "*.pyc" "*.pyo" ".pytest_cache/*" "tests/*"
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: release.zip
