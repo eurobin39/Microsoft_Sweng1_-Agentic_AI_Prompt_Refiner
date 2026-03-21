@@ -49,6 +49,71 @@ def _extract_json(text: str) -> dict:
     return json.loads(text[start : end + 1])
 
 
+async def run_evaluation_stream(
+    agent_name: str,
+    blueprint: AgentBlueprint,
+    traces: list[TraceLog],
+    chat_client: AzureOpenAIChatClient,
+):
+    """Async generator yielding SSE-formatted strings with live agent output chunks."""
+    workflow = build_refinement_workflow(chat_client)
+
+    payload = {
+        "blueprint": blueprint.model_dump(mode="json"),
+        "traces": [t.model_dump(mode="json") for t in traces],
+        "iteration": 1,
+    }
+    message = json.dumps(payload)
+
+    _buffers: dict[str, list[str]] = {}
+    _current_agent: str | None = None
+    _last_judge_text: str = ""
+    _last_refiner_text: str = ""
+
+    async for event in workflow.run_stream(message):
+        if isinstance(event, ExecutorInvokedEvent):
+            _current_agent = event.executor_id
+            if _current_agent:
+                _buffers[_current_agent] = []
+                yield f"data: {json.dumps({'type': 'agent_start', 'agent_name': agent_name, 'executor': _current_agent})}\n\n"
+
+        elif isinstance(event, AgentRunUpdateEvent):
+            executor_id = event.executor_id or _current_agent
+            data = event.data
+            if isinstance(data, AgentResponseUpdate):
+                text = getattr(data, "text", "") or ""
+                if text and executor_id:
+                    _buffers.setdefault(executor_id, []).append(text)
+                    yield f"data: {json.dumps({'type': 'chunk', 'agent_name': agent_name, 'executor': executor_id, 'text': text})}\n\n"
+
+        elif isinstance(event, ExecutorCompletedEvent):
+            executor_id = event.executor_id
+            if executor_id and executor_id in _buffers:
+                text = "".join(_buffers.pop(executor_id))
+                if text.strip():
+                    if executor_id == "judge_agent":
+                        _last_judge_text = text
+                    elif executor_id == "refiner_agent":
+                        _last_refiner_text = text
+
+    if not _last_judge_text:
+        yield f"data: {json.dumps({'type': 'error', 'detail': f'No output from judge_agent for {agent_name}'})}\n\n"
+        return
+
+    evaluation = EvaluationResult(**_extract_json(_last_judge_text))
+    refinement: RefinementResult | None = None
+    if _last_refiner_text:
+        refinement = RefinementResult(**_extract_json(_last_refiner_text))
+
+    result_data = {
+        "type": "result",
+        "agent_name": agent_name,
+        "evaluation": evaluation.model_dump(mode="json"),
+        "refinement": refinement.model_dump(mode="json") if refinement else None,
+    }
+    yield f"data: {json.dumps(result_data)}\n\n"
+
+
 async def run_evaluation(blueprint: AgentBlueprint, traces: list[TraceLog]) -> EvaluationResponse:
     chat_client = get_chat_client()
     workflow = build_refinement_workflow(chat_client)

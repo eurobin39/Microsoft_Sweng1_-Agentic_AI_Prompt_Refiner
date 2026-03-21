@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -88,6 +88,13 @@ type AgentRefinementResult = {
 
 type Stage = "idle" | "extracting" | "extracted" | "refining" | "done" | "error";
 
+type ThinkingState = {
+  agentName: string | null;
+  executor: string | null;
+  judgeText: string;
+  refinerText: string;
+};
+
 export default function Home() {
   const [url, setUrl] = useState("");
   const [stage, setStage] = useState<Stage>("idle");
@@ -95,6 +102,26 @@ export default function Home() {
   const [results, setResults] = useState<AgentRefinementResult[]>([]);
   const [error, setError] = useState("");
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+  const [thinking, setThinking] = useState<ThinkingState>({
+    agentName: null,
+    executor: null,
+    judgeText: "",
+    refinerText: "",
+  });
+  const judgeScrollRef = useRef<HTMLPreElement>(null);
+  const refinerScrollRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    if (judgeScrollRef.current) {
+      judgeScrollRef.current.scrollTop = judgeScrollRef.current.scrollHeight;
+    }
+  }, [thinking.judgeText]);
+
+  useEffect(() => {
+    if (refinerScrollRef.current) {
+      refinerScrollRef.current.scrollTop = refinerScrollRef.current.scrollHeight;
+    }
+  }, [thinking.refinerText]);
 
   async function handleExtract(e: React.SyntheticEvent) {
     e.preventDefault();
@@ -131,22 +158,66 @@ export default function Home() {
     setStage("refining");
     setResults([]);
     setError("");
+    setThinking({ agentName: null, executor: null, judgeText: "", refinerText: "" });
 
     try {
-      const res = await fetch(`${API_BASE}/api/v1/refine-all`, {
+      const res = await fetch(`${API_BASE}/api/v1/refine-all-stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ items }),
       });
 
-      if (!res.ok) {
+      if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.detail ?? `Request failed (${res.status})`);
       }
 
-      const data: AgentRefinementResult[] = await res.json();
-      setResults(data);
-      setStage("done");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data: ")) continue;
+          const event = JSON.parse(line.slice(6));
+
+          if (event.type === "agent_start") {
+            setThinking(prev => ({
+              ...prev,
+              agentName: event.agent_name,
+              executor: event.executor,
+              judgeText: event.executor === "judge_agent" ? "" : prev.judgeText,
+              refinerText: event.executor === "refiner_agent" ? "" : prev.refinerText,
+            }));
+          } else if (event.type === "chunk") {
+            setThinking(prev => ({
+              ...prev,
+              executor: event.executor,
+              judgeText: event.executor === "judge_agent" ? prev.judgeText + event.text : prev.judgeText,
+              refinerText: event.executor === "refiner_agent" ? prev.refinerText + event.text : prev.refinerText,
+            }));
+          } else if (event.type === "result") {
+            setResults(prev => [...prev, {
+              agent_name: event.agent_name,
+              evaluation: event.evaluation,
+              refinement: event.refinement,
+            }]);
+          } else if (event.type === "done") {
+            setStage("done");
+            setThinking({ agentName: null, executor: null, judgeText: "", refinerText: "" });
+          } else if (event.type === "error") {
+            throw new Error(event.detail);
+          }
+        }
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setStage("error");
@@ -196,13 +267,71 @@ export default function Home() {
         </button>
       </form>
 
-      {/* Loading */}
-      {isLoading && (
+      {/* Loading — extracting */}
+      {stage === "extracting" && (
         <div className="flex items-center gap-3 text-sm text-slate-600 bg-white rounded-xl border border-slate-200 px-4 py-3 w-fit shadow-sm">
           <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
-          {stage === "extracting"
-            ? "Crawling repo and extracting agent blueprints…"
-            : `Running refinement on ${items.length} agent${items.length !== 1 ? "s" : ""}…`}
+          Crawling repo and extracting agent blueprints…
+        </div>
+      )}
+
+      {/* Live thinking panel — shown while agents are running */}
+      {stage === "refining" && (
+        <div className="rounded-2xl border border-slate-200 bg-slate-950 overflow-hidden shadow-lg">
+          {/* Header */}
+          <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-800">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-sm font-semibold text-slate-200">
+              {thinking.agentName ? `Processing: ${thinking.agentName}` : "Starting…"}
+            </span>
+            {thinking.executor && (
+              <span className={`text-xs rounded-full px-2 py-0.5 font-medium border ${
+                thinking.executor === "judge_agent"
+                  ? "bg-indigo-900/60 border-indigo-700 text-indigo-300"
+                  : "bg-amber-900/60 border-amber-700 text-amber-300"
+              }`}>
+                {thinking.executor === "judge_agent" ? "Judge" : "Refiner"}
+              </span>
+            )}
+            <span className="ml-auto text-xs text-slate-500 tabular-nums">
+              {results.length}/{items.length} done
+            </span>
+          </div>
+
+          {/* Judge output */}
+          {thinking.judgeText ? (
+            <div className="border-b border-slate-800">
+              <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+                <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Judge</span>
+              </div>
+              <pre
+                ref={judgeScrollRef}
+                className="px-4 pb-4 whitespace-pre-wrap text-xs text-slate-300 font-mono leading-relaxed max-h-56 overflow-y-auto"
+              >
+                {thinking.judgeText}
+              </pre>
+            </div>
+          ) : (
+            <div className="px-4 py-4 flex items-center gap-2 text-xs text-slate-500">
+              <span className="inline-block h-3 w-3 animate-spin rounded-full border border-slate-600 border-t-slate-400" />
+              Waiting for judge…
+            </div>
+          )}
+
+          {/* Refiner output */}
+          {thinking.refinerText && (
+            <div>
+              <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Refiner</span>
+              </div>
+              <pre
+                ref={refinerScrollRef}
+                className="px-4 pb-4 whitespace-pre-wrap text-xs text-amber-200/80 font-mono leading-relaxed max-h-56 overflow-y-auto"
+              >
+                {thinking.refinerText}
+              </pre>
+            </div>
+          )}
         </div>
       )}
 
@@ -270,8 +399,8 @@ export default function Home() {
         </div>
       )}
 
-      {/* Extracted — show agents + Run Refine button */}
-      {(stage === "extracted" || stage === "done") && items.length > 0 && (
+      {/* Extracted — show agents + Run Refine button (also visible during refining to show partial results) */}
+      {(stage === "extracted" || stage === "refining" || stage === "done") && items.length > 0 && (
         <div className="space-y-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -556,9 +685,12 @@ function AgentCard({
 
               <p className="text-sm text-slate-700">{result.refinement.summary}</p>
 
-              <pre className="whitespace-pre-wrap rounded-xl bg-slate-900 border border-amber-800/30 p-4 text-xs text-amber-200/90 font-mono leading-relaxed">
-                {result.refinement.refined_prompt}
-              </pre>
+              <div className="relative group">
+                <pre className="whitespace-pre-wrap rounded-xl bg-slate-900 border border-amber-800/30 p-4 text-xs text-amber-200/90 font-mono leading-relaxed">
+                  {result.refinement.refined_prompt}
+                </pre>
+                <CopyButton text={result.refinement.refined_prompt} />
+              </div>
 
               {result.refinement.changes.length > 0 && (
                 <div className="space-y-2">
@@ -592,6 +724,39 @@ function AgentCard({
         </div>
       )}
     </div>
+  );
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <button
+      onClick={handleCopy}
+      className="absolute top-2.5 right-2.5 flex items-center gap-1.5 rounded-lg bg-slate-700/80 hover:bg-slate-600/90 border border-slate-600/60 px-2.5 py-1.5 text-xs font-medium text-slate-300 transition-all opacity-0 group-hover:opacity-100"
+    >
+      {copied ? (
+        <>
+          <svg className="h-3.5 w-3.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span className="text-green-400">Copied</span>
+        </>
+      ) : (
+        <>
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+          Copy
+        </>
+      )}
+    </button>
   );
 }
 
