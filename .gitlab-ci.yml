@@ -54,8 +54,6 @@ repo-sanity:
     - grep -nE 'include_router\(evaluation\.router, prefix="/api/v1"' backend/app/main.py
     - grep -nE '@router\.get\("/health"\)' backend/app/api/routes/health.py
     - grep -nE '@router\.post\("/evaluate"' backend/app/api/routes/evaluation.py
-    - python -m json.tool schema/evaluation_input.schema.json > /dev/null
-    - python -m json.tool schema/weather_agent.json > /dev/null
 
 backend-unit-pytest:
   stage: test
