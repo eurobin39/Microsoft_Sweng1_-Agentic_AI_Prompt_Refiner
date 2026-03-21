@@ -15,7 +15,7 @@ def _should_refine(response) -> bool:
     try:
         text = response.agent_response.text
         data = json.loads(text)
-        return data.get("overall_score", 1.0) < 0.7
+        return data.get("overall_score", 1.0) < 0.95
     except Exception:
         return False  # if we can't parse, don't route to refiner
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -28,24 +28,113 @@ type Blueprint = {
   } | null;
 };
 
-type Status = "idle" | "loading" | "done" | "error";
+type TraceToolCall = {
+  tool: string;
+  arguments: string | object;
+  result?: string | object | null;
+};
+type TraceAgentLog = {
+  instructions?: string | null;
+  tools_available: string[];
+  tool_calls: TraceToolCall[];
+  output?: string | null;
+  duration_ms?: number | null;
+};
+type TraceHandoff = { from?: string | null; to?: string | null };
+type Trace = {
+  timestamp: string;
+  mode?: string | null;
+  input?: string | null;
+  agents: Record<string, TraceAgentLog>;
+  execution_order: string[];
+  handoffs: TraceHandoff[];
+  final_output?: string | null;
+  duration_ms?: number | null;
+};
+
+type AgentBlueprintWithTraces = {
+  blueprint: Blueprint;
+  traces: Trace[];
+};
+
+type TestCaseResult = {
+  test_case_description: string;
+  score: number;
+  passed: boolean;
+  reasoning: string;
+  issues: string[];
+};
+type EvaluationResult = {
+  overall_score: number;
+  test_results: TestCaseResult[];
+  summary: string;
+};
+type RefinementChange = {
+  issue_reference: string;
+  change_description: string;
+  reasoning: string;
+};
+type RefinementResult = {
+  refined_prompt: string;
+  changes: RefinementChange[];
+  expected_impact: string;
+  summary: string;
+};
+type AgentRefinementResult = {
+  agent_name: string;
+  evaluation: EvaluationResult;
+  refinement: RefinementResult | null;
+};
+
+type Stage = "idle" | "extracting" | "extracted" | "refining" | "done" | "error";
+
+type ThinkingState = {
+  agentName: string | null;
+  executor: string | null;
+  judgeText: string;
+  refinerText: string;
+};
 
 export default function Home() {
   const [url, setUrl] = useState("");
-  const [status, setStatus] = useState<Status>("idle");
-  const [blueprint, setBlueprint] = useState<Blueprint | null>(null);
+  const [stage, setStage] = useState<Stage>("idle");
+  const [items, setItems] = useState<AgentBlueprintWithTraces[]>([]);
+  const [results, setResults] = useState<AgentRefinementResult[]>([]);
   const [error, setError] = useState("");
+  const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+  const [thinking, setThinking] = useState<ThinkingState>({
+    agentName: null,
+    executor: null,
+    judgeText: "",
+    refinerText: "",
+  });
+  const judgeScrollRef = useRef<HTMLPreElement>(null);
+  const refinerScrollRef = useRef<HTMLPreElement>(null);
 
-  async function handleSubmit(e: React.FormEvent) {
+  useEffect(() => {
+    if (judgeScrollRef.current) {
+      judgeScrollRef.current.scrollTop = judgeScrollRef.current.scrollHeight;
+    }
+  }, [thinking.judgeText]);
+
+  useEffect(() => {
+    if (refinerScrollRef.current) {
+      refinerScrollRef.current.scrollTop = refinerScrollRef.current.scrollHeight;
+    }
+  }, [thinking.refinerText]);
+
+  async function handleExtract(e: React.SyntheticEvent) {
     e.preventDefault();
     if (!url.trim()) return;
 
-    setStatus("loading");
-    setBlueprint(null);
+    setStage("extracting");
+    setItems([]);
+    setResults([]);
     setError("");
+    setExpandedAgent(null);
 
     try {
-      const res = await fetch(`${API_BASE}/api/v1/extract-blueprint`, {
+      const res = await fetch(`${API_BASE}/api/v1/extract-blueprints`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ github_url: url.trim() }),
@@ -56,206 +145,632 @@ export default function Home() {
         throw new Error(data.detail ?? `Request failed (${res.status})`);
       }
 
-      const data: Blueprint = await res.json();
-      setBlueprint(data);
-      setStatus("done");
+      const data: AgentBlueprintWithTraces[] = await res.json();
+      setItems(data);
+      setStage("extracted");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
-      setStatus("error");
+      setStage("error");
     }
   }
+
+  async function handleRefineAll() {
+    setStage("refining");
+    setResults([]);
+    setError("");
+    setThinking({ agentName: null, executor: null, judgeText: "", refinerText: "" });
+
+    try {
+      const res = await fetch(`${API_BASE}/api/v1/refine-all-stream`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ items }),
+      });
+
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail ?? `Request failed (${res.status})`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() ?? "";
+
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data: ")) continue;
+          const event = JSON.parse(line.slice(6));
+
+          if (event.type === "agent_start") {
+            setThinking(prev => ({
+              ...prev,
+              agentName: event.agent_name,
+              executor: event.executor,
+              judgeText: event.executor === "judge_agent" ? "" : prev.judgeText,
+              refinerText: event.executor === "refiner_agent" ? "" : prev.refinerText,
+            }));
+          } else if (event.type === "chunk") {
+            setThinking(prev => ({
+              ...prev,
+              executor: event.executor,
+              judgeText: event.executor === "judge_agent" ? prev.judgeText + event.text : prev.judgeText,
+              refinerText: event.executor === "refiner_agent" ? prev.refinerText + event.text : prev.refinerText,
+            }));
+          } else if (event.type === "result") {
+            setResults(prev => [...prev, {
+              agent_name: event.agent_name,
+              evaluation: event.evaluation,
+              refinement: event.refinement,
+            }]);
+          } else if (event.type === "done") {
+            setStage("done");
+            setThinking({ agentName: null, executor: null, judgeText: "", refinerText: "" });
+          } else if (event.type === "error") {
+            throw new Error(event.detail);
+          }
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+      setStage("error");
+    }
+  }
+
+  const isLoading = stage === "extracting" || stage === "refining";
 
   return (
     <div className="space-y-10">
       {/* Hero */}
-      <div className="space-y-3">
-        <h1 className="text-3xl font-bold tracking-tight text-gray-900">
-          Agentic AI Prompt Refiner
+      <div className="space-y-4 pt-2">
+        <div className="inline-flex items-center gap-2 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1">
+          <span className="h-1.5 w-1.5 rounded-full bg-indigo-500 animate-pulse" />
+          <span className="text-xs font-medium text-indigo-700">AI-Powered Prompt Analysis</span>
+        </div>
+        <h1 className="text-4xl font-bold tracking-tight">
+          <span className="bg-gradient-to-r from-indigo-600 via-violet-600 to-purple-600 bg-clip-text text-transparent">
+            Agentic AI
+          </span>{" "}
+          <span className="text-slate-900">Prompt Refiner</span>
         </h1>
-        <p className="text-gray-500 max-w-xl">
-          Point it at a GitHub repo containing an AI agent. It will crawl the
-          code, extract the agent blueprint, and evaluate the system prompt
-          against your test cases.
+        <p className="text-slate-500 max-w-xl text-base leading-relaxed">
+          Point it at a GitHub repo containing AI agents. It will crawl the
+          code, extract a blueprint per agent, and refine each system prompt
+          against its test cases.
         </p>
       </div>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="flex gap-3 max-w-2xl">
+      <form onSubmit={handleExtract} className="flex gap-3 max-w-2xl">
         <input
           type="url"
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           placeholder="https://github.com/owner/repo"
           required
-          className="flex-1 rounded-lg border border-gray-300 bg-white px-4 py-2.5 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-900"
+          disabled={isLoading}
+          className="flex-1 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 placeholder-slate-400 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-400/50 focus:border-indigo-300 disabled:opacity-50 transition-all"
         />
         <button
           type="submit"
-          disabled={status === "loading"}
-          className="rounded-lg bg-gray-900 px-5 py-2.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50 transition-colors"
+          disabled={isLoading}
+          className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-3 text-sm font-medium text-white hover:from-indigo-700 hover:to-violet-700 disabled:opacity-50 transition-all shadow-sm hover:shadow-md hover:shadow-indigo-200/60"
         >
-          {status === "loading" ? "Crawling…" : "Extract Blueprint"}
+          {stage === "extracting" ? "Crawling…" : "Extract Agents"}
         </button>
       </form>
 
-      {/* Loading */}
-      {status === "loading" && (
-        <div className="flex items-center gap-3 text-sm text-gray-500">
-          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-gray-300 border-t-gray-900" />
-          Crawling repo and extracting blueprint…
+      {/* Loading — extracting */}
+      {stage === "extracting" && (
+        <div className="flex items-center gap-3 text-sm text-slate-600 bg-white rounded-xl border border-slate-200 px-4 py-3 w-fit shadow-sm">
+          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-indigo-200 border-t-indigo-600" />
+          Crawling repo and extracting agent blueprints…
+        </div>
+      )}
+
+      {/* Live thinking panel — shown while agents are running */}
+      {stage === "refining" && (
+        <div className="rounded-2xl border border-slate-200 bg-slate-950 overflow-hidden shadow-lg">
+          {/* Header */}
+          <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-800">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="text-sm font-semibold text-slate-200">
+              {thinking.agentName ? `Processing: ${thinking.agentName}` : "Starting…"}
+            </span>
+            {thinking.executor && (
+              <span className={`text-xs rounded-full px-2 py-0.5 font-medium border ${
+                thinking.executor === "judge_agent"
+                  ? "bg-indigo-900/60 border-indigo-700 text-indigo-300"
+                  : "bg-amber-900/60 border-amber-700 text-amber-300"
+              }`}>
+                {thinking.executor === "judge_agent" ? "Judge" : "Refiner"}
+              </span>
+            )}
+            <span className="ml-auto text-xs text-slate-500 tabular-nums">
+              {results.length}/{items.length} done
+            </span>
+          </div>
+
+          {/* Judge output */}
+          {thinking.judgeText ? (
+            <div className="border-b border-slate-800">
+              <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+                <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Judge</span>
+              </div>
+              <pre
+                ref={judgeScrollRef}
+                className="px-4 pb-4 whitespace-pre-wrap text-xs text-slate-300 font-mono leading-relaxed max-h-56 overflow-y-auto"
+              >
+                {thinking.judgeText}
+              </pre>
+            </div>
+          ) : (
+            <div className="px-4 py-4 flex items-center gap-2 text-xs text-slate-500">
+              <span className="inline-block h-3 w-3 animate-spin rounded-full border border-slate-600 border-t-slate-400" />
+              Waiting for judge…
+            </div>
+          )}
+
+          {/* Refiner output */}
+          {thinking.refinerText && (
+            <div>
+              <div className="px-4 pt-3 pb-1 flex items-center gap-2">
+                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Refiner</span>
+              </div>
+              <pre
+                ref={refinerScrollRef}
+                className="px-4 pb-4 whitespace-pre-wrap text-xs text-amber-200/80 font-mono leading-relaxed max-h-56 overflow-y-auto"
+              >
+                {thinking.refinerText}
+              </pre>
+            </div>
+          )}
         </div>
       )}
 
       {/* Error */}
-      {status === "error" && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      {stage === "error" && (
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-3">
+          <svg className="h-4 w-4 mt-0.5 flex-shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
           {error}
         </div>
       )}
 
-      {/* Result */}
-      {status === "done" && blueprint && (
-        <div className="space-y-6">
-          <div className="flex items-center gap-3">
-            <span className="inline-block h-2 w-2 rounded-full bg-green-500" />
-            <span className="text-sm font-medium text-gray-700">
-              Blueprint extracted
-            </span>
+      {/* How it works — only on idle */}
+      {stage === "idle" && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3 pt-2">
+          {[
+            {
+              step: "01",
+              title: "Paste a GitHub URL",
+              desc: "Link to any repository containing AI agents built with frameworks like the OpenAI Agents SDK.",
+              icon: (
+                <svg className="h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                </svg>
+              ),
+            },
+            {
+              step: "02",
+              title: "Extract Blueprints",
+              desc: "We crawl the codebase, extract system prompts, tools, test cases, and execution traces per agent.",
+              icon: (
+                <svg className="h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                </svg>
+              ),
+            },
+            {
+              step: "03",
+              title: "Refine Prompts",
+              desc: "Each agent's system prompt is evaluated against its test cases and refined for better performance.",
+              icon: (
+                <svg className="h-5 w-5 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                </svg>
+              ),
+            },
+          ].map(({ step, title, desc, icon }) => (
+            <div
+              key={step}
+              className="rounded-2xl border border-slate-200/80 bg-white p-5 shadow-sm space-y-3"
+            >
+              <div className="flex items-center justify-between">
+                <div className="h-9 w-9 rounded-xl bg-indigo-50 flex items-center justify-center">
+                  {icon}
+                </div>
+                <span className="text-xs font-bold text-slate-300 font-mono tabular-nums">{step}</span>
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-sm font-semibold text-slate-900">{title}</h3>
+                <p className="text-xs text-slate-500 leading-relaxed">{desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Extracted — show agents + Run Refine button (also visible during refining to show partial results) */}
+      {(stage === "extracted" || stage === "refining" || stage === "done") && items.length > 0 && (
+        <div className="space-y-5">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2 rounded-full bg-green-50 border border-green-200 px-3 py-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                <span className="text-xs font-medium text-green-700">
+                  {items.length} agent{items.length !== 1 ? "s" : ""} found
+                </span>
+              </div>
+              <span className="text-sm text-slate-400">
+                · {items.reduce((n, it) => n + it.traces.length, 0)} trace{items.reduce((n, it) => n + it.traces.length, 0) !== 1 ? "s" : ""} scraped
+              </span>
+            </div>
+            {stage === "extracted" && (
+              <button
+                onClick={handleRefineAll}
+                className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2 text-sm font-medium text-white hover:from-indigo-700 hover:to-violet-700 transition-all shadow-sm"
+              >
+                Run Refine on All Agents
+              </button>
+            )}
           </div>
 
-          <div className="grid gap-4">
-            {/* Agent info */}
-            <Section title="Agent">
-              <Row label="Name" value={blueprint.agent.name} />
-              <Row label="Description" value={blueprint.agent.description} />
-              <Row label="Model" value={blueprint.agent.model} />
-              <Row label="Provider" value={blueprint.agent.provider} />
-              <div className="col-span-2 space-y-1">
-                <span className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                  System Prompt
-                </span>
-                <pre className="whitespace-pre-wrap rounded-lg bg-gray-50 border border-gray-200 p-4 text-sm text-gray-800 font-mono leading-relaxed">
-                  {blueprint.agent.system_prompt}
-                </pre>
-              </div>
-            </Section>
+          <div className="space-y-3">
+            {items.map((item, i) => {
+              const agentName = item.blueprint.agent.name ?? `Agent ${i + 1}`;
+              const result = results.find((r) => r.agent_name === agentName);
+              const isExpanded = expandedAgent === agentName;
 
-            {/* Tools */}
+              return (
+                <AgentCard
+                  key={agentName}
+                  blueprint={item.blueprint}
+                  traces={item.traces}
+                  agentName={agentName}
+                  result={result ?? null}
+                  isExpanded={isExpanded}
+                  onToggle={() =>
+                    setExpandedAgent(isExpanded ? null : agentName)
+                  }
+                />
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentCard({
+  blueprint,
+  traces,
+  agentName,
+  result,
+  isExpanded,
+  onToggle,
+}: {
+  blueprint: Blueprint;
+  traces: Trace[];
+  agentName: string;
+  result: AgentRefinementResult | null;
+  isExpanded: boolean;
+  onToggle: () => void;
+}) {
+  const score = result?.evaluation.overall_score;
+  const scoreColor =
+    score === undefined
+      ? "text-slate-400"
+      : score >= 0.7
+      ? "text-green-600"
+      : score >= 0.4
+      ? "text-yellow-600"
+      : "text-red-600";
+
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-hidden hover:shadow-md transition-shadow">
+      {/* Card header — always visible */}
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50/70 transition-colors"
+      >
+        <div className="flex items-center gap-3 min-w-0">
+          <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-100 to-violet-100 flex items-center justify-center flex-shrink-0">
+            <svg className="h-4 w-4 text-indigo-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17H3a2 2 0 01-2-2V5a2 2 0 012-2h14a2 2 0 012 2v10a2 2 0 01-2 2h-2" />
+            </svg>
+          </div>
+          <div className="min-w-0">
+            <span className="text-sm font-semibold text-slate-900">{agentName}</span>
+            {blueprint.agent.description && (
+              <p className="text-xs text-slate-500 truncate mt-0.5">{blueprint.agent.description}</p>
+            )}
+          </div>
+          <div className="flex items-center gap-2 ml-1">
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+              {blueprint.test_cases.length} tests
+            </span>
             {blueprint.agent.tools && blueprint.agent.tools.length > 0 && (
-              <Section title={`Tools (${blueprint.agent.tools.length})`}>
-                <div className="col-span-2 space-y-2">
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                {blueprint.agent.tools.length} tools
+              </span>
+            )}
+            <span className={`rounded-full px-2 py-0.5 text-xs ${
+              traces.length > 0 ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-400"
+            }`}>
+              {traces.length} traces
+            </span>
+          </div>
+        </div>
+        <div className="flex items-center gap-3 flex-shrink-0">
+          {score !== undefined && (
+            <span className={`text-sm font-bold tabular-nums ${scoreColor}`}>
+              {Math.round(score * 100)}%
+            </span>
+          )}
+          {result?.refinement && (
+            <span className="rounded-full bg-amber-100 border border-amber-200 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+              Refined
+            </span>
+          )}
+          {result && !result.refinement && (
+            <span className="rounded-full bg-green-100 border border-green-200 px-2.5 py-0.5 text-xs font-medium text-green-700">
+              Passed
+            </span>
+          )}
+          <svg
+            className={`h-4 w-4 text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+        </div>
+      </button>
+
+      {/* Expanded content */}
+      {isExpanded && (
+        <div className="border-t border-slate-100 divide-y divide-slate-100">
+          {/* Traces */}
+          {traces.length > 0 && (
+            <div className="px-5 py-4 space-y-3">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Scraped Traces ({traces.length})
+              </h3>
+              <div className="space-y-2">
+                {traces.map((trace, i) => {
+                  const agentLog = trace.agents[agentName];
+                  return (
+                    <div key={i} className="rounded-xl border border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50/40 px-4 py-3 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-medium text-blue-700">
+                          {trace.input ? `"${trace.input}"` : `Trace ${i + 1}`}
+                        </p>
+                        <span className="text-xs text-blue-400 font-mono">
+                          {trace.execution_order.join(" → ")}
+                        </span>
+                      </div>
+                      {agentLog && (
+                        <div className="space-y-1">
+                          {agentLog.tool_calls.length > 0 && (
+                            <p className="text-xs text-blue-600">
+                              <span className="font-medium">Tools:</span>{" "}
+                              {agentLog.tool_calls.map((tc) => tc.tool).join(", ")}
+                            </p>
+                          )}
+                          {agentLog.output && (
+                            <p className="text-xs text-slate-600 line-clamp-2">{agentLog.output}</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {traces.length === 0 && (
+            <div className="px-5 py-4">
+              <p className="text-xs text-slate-400">No trace logs found in repo for this agent.</p>
+            </div>
+          )}
+
+          {/* Blueprint */}
+          <div className="px-5 py-4 space-y-4">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Blueprint</h3>
+
+            <div className="space-y-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">System Prompt</span>
+              <pre className="whitespace-pre-wrap rounded-xl bg-slate-900 border border-slate-800 p-4 text-xs text-slate-300 font-mono leading-relaxed">
+                {blueprint.agent.system_prompt}
+              </pre>
+            </div>
+
+            {blueprint.agent.tools && blueprint.agent.tools.length > 0 && (
+              <div className="space-y-2">
+                <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                  Tools ({blueprint.agent.tools.length})
+                </span>
+                <div className="grid gap-2">
                   {blueprint.agent.tools.map((tool, i) => (
-                    <div
-                      key={i}
-                      className="rounded-lg border border-gray-200 bg-white px-4 py-3 space-y-1"
-                    >
-                      <p className="text-sm font-medium text-gray-900">
-                        {tool.name}
-                      </p>
-                      <p className="text-sm text-gray-500">{tool.description}</p>
+                    <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+                      <p className="text-sm font-medium text-slate-900">{tool.name}</p>
+                      <p className="text-xs text-slate-500 mt-0.5">{tool.description}</p>
                     </div>
                   ))}
                 </div>
-              </Section>
+              </div>
             )}
 
-            {/* Test cases */}
-            <Section title={`Test Cases (${blueprint.test_cases.length})`}>
-              <div className="col-span-2 space-y-2">
+            <div className="space-y-2">
+              <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Test Cases ({blueprint.test_cases.length})
+              </span>
+              <div className="grid gap-2">
                 {blueprint.test_cases.map((tc, i) => (
-                  <div
-                    key={i}
-                    className="rounded-lg border border-gray-200 bg-white px-4 py-3 space-y-1"
-                  >
+                  <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-1">
                     {tc.description && (
-                      <p className="text-xs font-medium text-gray-400">
-                        {tc.description}
-                      </p>
+                      <p className="text-xs text-slate-400">{tc.description}</p>
                     )}
-                    <p className="text-sm text-gray-900">
-                      <span className="font-medium">Input: </span>
-                      {tc.input}
+                    <p className="text-sm text-slate-900">
+                      <span className="font-medium">Input: </span>{tc.input}
                     </p>
                     {tc.expected_behavior && (
-                      <p className="text-sm text-gray-500">
-                        <span className="font-medium">Expected: </span>
-                        {tc.expected_behavior}
+                      <p className="text-sm text-slate-500">
+                        <span className="font-medium">Expected: </span>{tc.expected_behavior}
                       </p>
                     )}
                   </div>
                 ))}
               </div>
-            </Section>
+            </div>
+          </div>
 
-            {/* Evaluation criteria */}
-            {blueprint.evaluation_criteria && (
-              <Section title="Evaluation Criteria">
-                {blueprint.evaluation_criteria.goals &&
-                  blueprint.evaluation_criteria.goals.length > 0 && (
-                    <div className="space-y-1">
-                      <span className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                        Goals
+          {/* Evaluation results */}
+          {result && (
+            <div className="px-5 py-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Evaluation</h3>
+                <ScoreBadge score={result.evaluation.overall_score} />
+              </div>
+
+              <p className="text-sm text-slate-700">{result.evaluation.summary}</p>
+
+              <div className="space-y-2">
+                {result.evaluation.test_results.map((tr, i) => (
+                  <div
+                    key={i}
+                    className={`rounded-xl border px-4 py-3 space-y-1.5 ${
+                      tr.passed
+                        ? "border-green-200 bg-gradient-to-r from-green-50 to-emerald-50/40"
+                        : "border-red-200 bg-gradient-to-r from-red-50 to-rose-50/40"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium text-slate-900">
+                        {tr.test_case_description}
+                      </p>
+                      <span className={`text-sm font-bold tabular-nums ${tr.passed ? "text-green-600" : "text-red-600"}`}>
+                        {Math.round(tr.score * 100)}%
                       </span>
-                      <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
-                        {blueprint.evaluation_criteria.goals.map((g, i) => (
-                          <li key={i}>{g}</li>
+                    </div>
+                    <p className="text-sm text-slate-600">{tr.reasoning}</p>
+                    {tr.issues.length > 0 && (
+                      <ul className="list-disc list-inside text-xs text-red-700 space-y-0.5 pt-0.5">
+                        {tr.issues.map((issue, j) => (
+                          <li key={j}>{issue}</li>
                         ))}
                       </ul>
-                    </div>
-                  )}
-                {blueprint.evaluation_criteria.constraints &&
-                  blueprint.evaluation_criteria.constraints.length > 0 && (
-                    <div className="space-y-1">
-                      <span className="text-xs font-medium uppercase tracking-wide text-gray-400">
-                        Constraints
-                      </span>
-                      <ul className="list-disc list-inside text-sm text-gray-700 space-y-0.5">
-                        {blueprint.evaluation_criteria.constraints.map(
-                          (c, i) => (
-                            <li key={i}>{c}</li>
-                          )
-                        )}
-                      </ul>
-                    </div>
-                  )}
-              </Section>
-            )}
-          </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Refinement */}
+          {result?.refinement && (
+            <div className="px-5 py-4 space-y-4">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Refined Prompt</h3>
+
+              <p className="text-sm text-slate-700">{result.refinement.summary}</p>
+
+              <div className="relative group">
+                <pre className="whitespace-pre-wrap rounded-xl bg-slate-900 border border-amber-800/30 p-4 text-xs text-amber-200/90 font-mono leading-relaxed">
+                  {result.refinement.refined_prompt}
+                </pre>
+                <CopyButton text={result.refinement.refined_prompt} />
+              </div>
+
+              {result.refinement.changes.length > 0 && (
+                <div className="space-y-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                    Changes ({result.refinement.changes.length})
+                  </span>
+                  <div className="grid gap-2">
+                    {result.refinement.changes.map((change, i) => (
+                      <div key={i} className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 space-y-1">
+                        <p className="text-sm font-medium text-slate-900">{change.change_description}</p>
+                        <p className="text-xs text-slate-500">
+                          <span className="font-medium">Issue: </span>{change.issue_reference}
+                        </p>
+                        <p className="text-xs text-slate-500">
+                          <span className="font-medium">Why: </span>{change.reasoning}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="rounded-xl border border-amber-200 bg-gradient-to-r from-amber-50 to-yellow-50/40 px-4 py-3">
+                <p className="text-sm text-amber-800">
+                  <span className="font-medium">Expected impact: </span>
+                  {result.refinement.expected_impact}
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
   );
 }
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   return (
-    <div className="rounded-xl border border-gray-200 bg-white p-5 space-y-4">
-      <h2 className="text-sm font-semibold text-gray-900">{title}</h2>
-      <div className="grid grid-cols-2 gap-4">{children}</div>
-    </div>
+    <button
+      onClick={handleCopy}
+      className="absolute top-2.5 right-2.5 flex items-center gap-1.5 rounded-lg bg-slate-700/80 hover:bg-slate-600/90 border border-slate-600/60 px-2.5 py-1.5 text-xs font-medium text-slate-300 transition-all opacity-0 group-hover:opacity-100"
+    >
+      {copied ? (
+        <>
+          <svg className="h-3.5 w-3.5 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+          </svg>
+          <span className="text-green-400">Copied</span>
+        </>
+      ) : (
+        <>
+          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
+          Copy
+        </>
+      )}
+    </button>
   );
 }
 
-function Row({
-  label,
-  value,
-}: {
-  label: string;
-  value?: string | null;
-}) {
-  if (!value) return null;
+function ScoreBadge({ score }: { score: number }) {
+  const pct = Math.round(score * 100);
+  const color =
+    score >= 0.7
+      ? "bg-green-100 text-green-700 border-green-200"
+      : score >= 0.4
+      ? "bg-yellow-100 text-yellow-700 border-yellow-200"
+      : "bg-red-100 text-red-700 border-red-200";
   return (
-    <div className="space-y-1">
-      <span className="text-xs font-medium uppercase tracking-wide text-gray-400">
-        {label}
-      </span>
-      <p className="text-sm text-gray-800">{value}</p>
-    </div>
+    <span className={`rounded-full border px-3 py-0.5 text-xs font-bold tabular-nums ${color}`}>
+      {pct}%
+    </span>
   );
 }

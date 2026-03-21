@@ -162,3 +162,19 @@ class EvaluationResponse(BaseModel):
         and optionally the refiner output when overall_score < 0.7. """
     evaluation: EvaluationResult = Field(..., description="Judge evaluation result")
     refinement: RefinementResult | None = Field(None, description="Refiner output (present when overall_score < 0.7)")
+
+
+class AgentRefinementResult(BaseModel):
+    """Result for a single agent in a batch refinement run."""
+    agent_name: str = Field(..., description="Name of the agent")
+    evaluation: EvaluationResult = Field(..., description="Judge evaluation result")
+    refinement: RefinementResult | None = Field(None, description="Refiner output if score < 0.7")
+
+
+class AgentBlueprintWithTraces(BaseModel):
+    blueprint: AgentBlueprint = Field(..., description="Extracted agent blueprint")
+    traces: List[TraceLog] = Field(default_factory=list, description="Trace logs scraped from the repo for this agent")
+
+
+class BatchRefineRequest(BaseModel):
+    items: List[AgentBlueprintWithTraces] = Field(..., description="One blueprint+traces bundle per agent")
