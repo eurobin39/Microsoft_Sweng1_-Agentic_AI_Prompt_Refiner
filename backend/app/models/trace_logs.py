@@ -1,7 +1,22 @@
 from __future__ import annotations
+import json
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+
+def _parse_json_object_string(value: Any) -> Any:
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not stripped:
+        return value
+    if not ((stripped.startswith("{") and stripped.endswith("}")) or (stripped.startswith("[") and stripped.endswith("]"))):
+        return value
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return value
 
 
 class ToolCall(BaseModel):
@@ -94,3 +109,8 @@ class TraceLog(BaseModel):
         if isinstance(v, datetime):
             return v
         return datetime.fromisoformat(v)
+
+    @field_validator("agents", mode="before")
+    @classmethod
+    def parse_agents_json_string(cls, v: Any) -> Any:
+        return _parse_json_object_string(v)

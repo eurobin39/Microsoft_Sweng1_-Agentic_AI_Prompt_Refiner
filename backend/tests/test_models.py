@@ -103,6 +103,32 @@ class TestAgentBlueprint:
         with pytest.raises(ValidationError):
             AgentBlueprint.model_validate(data)
 
+    def test_stringified_json_fields_are_accepted(self):
+        data = {
+            "agent": {
+                "system_prompt": "You are helpful.",
+                "model_parameters": "{}",
+                "output_schema": "{}",
+            },
+            "test_cases": [
+                {
+                    "description": "d",
+                    "input": "i",
+                    "expected_behavior": "b",
+                    "expected_output": "o",
+                    "context": "{}",
+                }
+            ],
+            "evaluation_criteria": "{}",
+        }
+
+        bp = AgentBlueprint.model_validate(data)
+        assert bp.agent.model_parameters == {}
+        assert bp.agent.output_schema == {}
+        assert bp.test_cases[0].context == {}
+        assert bp.evaluation_criteria is not None
+        assert bp.evaluation_criteria.goals == []
+
 
 # ---------------------------------------------------------------------------
 # TraceLog models
@@ -169,6 +195,22 @@ class TestTraceLog:
         assert len(weather.tool_calls) == 1
         assert weather.tool_calls[0].tool == "get_weather"
         assert weather.duration_ms == 5367
+
+    def test_stringified_agents_object_is_accepted(self):
+        data = {
+            "timestamp": "2026-03-21T00:00:00Z",
+            "input": "i",
+            "agents": "{}",
+            "execution_order": ["main"],
+            "duration_ms": "1",
+            "mode": "single",
+            "final_output": "o",
+            "handoffs": [],
+        }
+
+        trace = TraceLog.model_validate(data)
+        assert trace.agents == {}
+        assert trace.duration_ms == 1
 
     def test_all_trace_files_parse(self):
         """Every trace file in the traces dir should parse without error."""

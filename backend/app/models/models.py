@@ -1,8 +1,24 @@
 from __future__ import annotations
+import json
 from enum import Enum
 from typing import Any, Dict, List
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from app.models.trace_logs import TraceLog
+
+
+def _parse_json_object_string(value: Any) -> Any:
+    """Accept object-like JSON strings from upstream gateways and tool layers."""
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if not stripped:
+        return value
+    if not ((stripped.startswith("{") and stripped.endswith("}")) or (stripped.startswith("[") and stripped.endswith("]"))):
+        return value
+    try:
+        return json.loads(stripped)
+    except json.JSONDecodeError:
+        return value
 
 
 class Provider(str, Enum):
@@ -62,6 +78,11 @@ class AgentInfo(BaseModel):
     output_format: OutputFormat | None = Field(None, description="text/json/markdown")
     output_schema: Dict[str, Any] | None = Field(None, description="JSON Schema when output_format=json")
 
+    @field_validator("model_parameters", "output_schema", mode="before")
+    @classmethod
+    def parse_json_string_fields(cls, v: Any) -> Any:
+        return _parse_json_object_string(v)
+
     @model_validator(mode="after")
     def check_output_schema_if_json(self):
         if self.output_format == OutputFormat.json and not self.output_schema:
@@ -81,6 +102,11 @@ class TestCase(BaseModel):
     expected_output: str | None = Field(None, description="Reference ideal output")
     expected_behavior: str | None = Field(None, description="Natural-language expected behavior")
     context: Dict[str, Any] | None = Field(None, description="Extra context (free-form)")
+
+    @field_validator("context", mode="before")
+    @classmethod
+    def parse_context_json_string(cls, v: Any) -> Any:
+        return _parse_json_object_string(v)
 
 
 class EvaluationCriteria(BaseModel):
@@ -127,6 +153,11 @@ class AgentBlueprint(BaseModel):
     agent: AgentInfo = Field(..., description="Agent info (required)")
     test_cases: List[TestCase] = Field(..., description="List of test cases (required, min 1)")
     evaluation_criteria: EvaluationCriteria | None = Field(None, description="Optional evaluation guidance")
+
+    @field_validator("evaluation_criteria", mode="before")
+    @classmethod
+    def parse_evaluation_criteria_json_string(cls, v: Any) -> Any:
+        return _parse_json_object_string(v)
 
     @field_validator("test_cases")
     @classmethod
