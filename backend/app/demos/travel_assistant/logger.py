@@ -57,22 +57,19 @@ def setup_logging(level: int = logging.INFO, log_file: str | None = None) -> Non
 # Hardcoded from definitions.py so traces always have the real prompts.
 
 _AGENT_INSTRUCTIONS = {
-    "triage_agent": "Figure out what the user needs help with and send them to the right agent.",
-    "weather_agent": (
-        "Tell the user about the weather at their destination. "
-        "Use get_weather for now and get_forecast for the week ahead."
-    ),
-    "packing_agent": "Help the user figure out what to pack based on the weather and their trip type.",
-    "activities_agent": "Suggest things to do at the destination. Use get_activities and get_local_tips.",
-    "booking_agent": "Help the user find and book flights and hotels.",
+    "triage_agent": "Route the user to the right agent.",
+    "weather_agent": "Tell the user about the weather.",
+    "packing_agent": "Help the user figure out what to pack.",
+    "activities_agent": "Suggest things to do at the destination.",
+    "booking_agent": "Help the user find flights and hotels.",
 }
 
 _AGENT_TOOLS = {
     "triage_agent": [],
     "weather_agent": ["get_weather", "get_forecast"],
-    "packing_agent": ["get_packing_list", "check_luggage_restrictions"],
+    "packing_agent": ["get_packing_list"],
     "activities_agent": ["get_activities", "get_local_tips"],
-    "booking_agent": ["search_flights", "search_hotels", "book_flight", "book_hotel"],
+    "booking_agent": ["search_flights", "search_hotels"],
 }
 
 

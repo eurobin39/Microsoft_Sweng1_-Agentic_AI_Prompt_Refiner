@@ -53,20 +53,10 @@ def setup_logging(level: int = logging.INFO, log_file: str | None = None) -> Non
 
 
 _AGENT_INSTRUCTIONS = {
-    "resume_info_collector": (
-        "Pull out the person's info from their resume. "
-        "Return as JSON with name, education, skills, experience, projects."
-    ),
-    "resume_job_analyzer": (
-        "Read the job description and extract the key requirements. Return as JSON."
-    ),
-    "resume_writer": (
-        "Write a resume based on the person's profile and the job they're applying for."
-    ),
-    "resume_reviewer": (
-        "Review the resume against the job requirements. "
-        "Give a score out of 10 and list what's good and what needs improving."
-    ),
+    "resume_info_collector": "Extract information from the resume.",
+    "resume_job_analyzer": "Read the job description and list the requirements.",
+    "resume_writer": "Write a resume.",
+    "resume_reviewer": "Review the resume and provide feedback.",
 }
 
 _AGENT_TOOLS: dict[str, list] = {

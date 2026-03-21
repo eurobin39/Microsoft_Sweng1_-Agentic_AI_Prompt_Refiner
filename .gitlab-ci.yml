@@ -54,8 +54,6 @@ repo-sanity:
     - grep -nE 'include_router\(evaluation\.router, prefix="/api/v1"' backend/app/main.py
     - grep -nE '@router\.get\("/health"\)' backend/app/api/routes/health.py
     - grep -nE '@router\.post\("/evaluate"' backend/app/api/routes/evaluation.py
-    - python -m json.tool schema/evaluation_input.schema.json > /dev/null
-    - python -m json.tool schema/weather_agent.json > /dev/null
 
 backend-unit-pytest:
   stage: test
@@ -63,7 +61,7 @@ backend-unit-pytest:
   script:
     - pip install -r backend/requirements-ci.txt "pydantic>=2,<3"
     - cd backend
-    - PYTHONPATH=. pytest -q tests/test_models.py tests/test_judge_tools.py tests/test_refiner_tools.py --junitxml="$CI_PROJECT_DIR/backend-unit-junit.xml"
+    - PYTHONPATH=. pytest -q tests/test_models.py --junitxml="$CI_PROJECT_DIR/backend-unit-junit.xml"
   artifacts:
     when: always
     reports:

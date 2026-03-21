@@ -1,0 +1,55 @@
+{
+  "timestamp": "2026-03-21T15:37:53.675314",
+  "mode": "handoff",
+  "input": "Find me flights from Dublin to Barcelona and some hotels for 3 nights.",
+  "agents": {
+    "triage_agent": {
+      "instructions": "Route the user to the right agent.",
+      "tools_available": [],
+      "tool_calls": [
+        {
+          "tool": "handoff_to_booking_agent",
+          "arguments": "",
+          "result": {
+            "handoff_to": "booking_agent"
+          }
+        }
+      ],
+      "output": "",
+      "duration_ms": null
+    },
+    "booking_agent": {
+      "instructions": "Help the user find flights and hotels.",
+      "tools_available": [
+        "search_flights",
+        "search_hotels"
+      ],
+      "tool_calls": [
+        {
+          "tool": "search_flights",
+          "arguments": "",
+          "result": "{\n  \"origin\": \"Dublin\",\n  \"destination\": \"Barcelona\",\n  \"flights\": [\n    {\n      \"flight_id\": \"FL-1000\",\n      \"airline\": \"KLM\",\n      \"departure\": \"2025-03-01T06:00:00\",\n      \"duration_hours\": 5,\n      \"stops\": 0,\n      \"price_eur\": 274\n    },\n    {\n      \"flight_id\": \"FL-1001\",\n      \"airline\": \"Emirates\",\n      \"departure\": \"2025-03-01T10:00:00\",\n      \"duration_hours\": 5,\n      \"stops\": 0,\n      \"price_eur\": 297\n    },\n    {\n      \"flight_id\": \"FL-1002\",\n      \"airline\": \"British Airways\",\n      \"departure\": \"2025-03-01T14:00:00\",\n      \"duration_hours\": 5,\n      \"stops\": 1,\n      \"price_eur\": 351\n    },\n    {\n      \"flight_id\": \"FL-1003\",\n      \"airline\": \"Aer Lingus\",\n      \"departure\": \"2025-03-01T18:00:00\",\n      \"duration_hours\": 5,\n      \"stops\": 1,\n      \"price_eur\": 411\n    }\n  ]\n}"
+        },
+        {
+          "tool": "search_hotels",
+          "arguments": "",
+          "result": "{\n  \"destination\": \"Barcelona\",\n  \"checkin\": \"2025-03-01\",\n  \"nights\": 3,\n  \"hotels\": [\n    {\n      \"hotel_id\": \"HTL-2000\",\n      \"name\": \"Grand Hotel Barcelona\",\n      \"stars\": 2,\n      \"price_per_night_eur\": 90,\n      \"total_eur\": 270\n    },\n    {\n      \"hotel_id\": \"HTL-2001\",\n      \"name\": \"The Barcelona Inn\",\n      \"stars\": 3,\n      \"price_per_night_eur\": 128,\n      \"total_eur\": 384\n    },\n    {\n      \"hotel_id\": \"HTL-2002\",\n      \"name\": \"Budget Stay Barcelona\",\n      \"stars\": 4,\n      \"price_per_night_eur\": 133,\n      \"total_eur\": 399\n    }\n  ]\n}"
+        }
+      ],
+      "output": "Here are some good options for your trip from **Dublin to Barcelona** with a **3‑night stay**.\n\n---\n\n## ✈️ Flights (Dublin → Barcelona)\nAll flights shown are for **1 March**:\n\n1. **KLM**  \n   - Departure: 06:00  \n   - Duration: 5 hours  \n   - Stops: Non‑stop  \n   - **Price: €274** ✅ *Best value*\n\n2. **Emirates**  \n   - Departure: 10:00  \n   - Duration: 5 hours  \n   - Stops: Non‑stop  \n   - Price: €297  \n\n3. **British Airways**  \n   - Departure: 14:00  \n   - Duration: 5 hours  \n   - Stops: 1 stop  \n   - Price: €351  \n\n4. **Aer Lingus**  \n   - Departure: 18:00  \n   - Duration: 5 hours  \n   - Stops: 1 stop  \n   - Price: €411  \n\n---\n\n## 🏨 Hotels in Barcelona (3 nights)\n\n1. **Grand Hotel Barcelona** ⭐⭐  \n   - €90 per night  \n   - **Total: €270** ✅ *Best budget option*\n\n2. **The Barcelona Inn** ⭐⭐⭐  \n   - €128 per night  \n   - Total: €384  \n\n3. **Budget Stay Barcelona** ⭐⭐⭐⭐  \n   - €133 per night  \n   - Total: €399  \n\n---\n\nIf you’d like, I can:\n- Recommend the **best flight + hotel combination**\n- Filter by **non‑stop flights only**\n- Look for **higher‑end hotels** or specific areas in Barcelona  \nJust tell me!",
+      "duration_ms": 6563
+    }
+  },
+  "execution_order": [
+    "triage_agent",
+    "booking_agent"
+  ],
+  "handoffs": [
+    {
+      "from": "triage_agent",
+      "to": "booking_agent"
+    }
+  ],
+  "final_output": "",
+  "duration_ms": 10298
+}

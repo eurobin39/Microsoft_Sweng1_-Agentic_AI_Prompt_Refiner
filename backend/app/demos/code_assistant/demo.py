@@ -1,27 +1,21 @@
+import json
 import os
 import sys
+from pathlib import Path
 
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-sys.path.insert(0, parent_dir)
+from dotenv import load_dotenv
 
-from code_assistant.runner import run_workflow
+# Allow running directly from this directory
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+load_dotenv()
+
+from app.demos.code_assistant.runner import run_sync
+from app.models.trace_logs import TraceLog
 
 
-SAMPLE_CODE = """
-def calculate(x, y):
-    return x + y
-
-def process_data(items):
-    result = []
-    for item in items:
-        if item > 0:
-            result.append(item * 2)
-    return result
-"""
-
-LOG_FILE = "code_assistant/log/code_assistant.log"
-TRACE_DIR = "code_assistant/log/traces"
+GROUND_TRUTH_PATH = Path(__file__).parent / "ground_truth.json"
+TRACE_DIR = str(Path(__file__).parent / "log" / "traces")
+LOG_FILE = str(Path(__file__).parent / "log" / "code_assistant.log")
 
 
 def header(title: str) -> None:
@@ -30,76 +24,25 @@ def header(title: str) -> None:
     print("=" * 80 + "\n")
 
 
-def run_demo():
-    header("CODE ASSISTANT DEMO — GRAPH WORKFLOW")
-    print("Sample code:")
-    print("-" * 80)
-    print(SAMPLE_CODE)
-    print("-" * 80)
+def run_demo() -> list[TraceLog]:
+    header("CODE ASSISTANT DEMO — HANDOFF WORKFLOW")
+
+    ground_truth = json.loads(GROUND_TRUTH_PATH.read_text())
+    code = ground_truth["code"]
+    test_cases = ground_truth["test_cases"]
+
+    print(f"Running {len(test_cases)} scenarios from ground truth.")
     print(f"Traces will be saved to: {TRACE_DIR}/\n")
 
-    # Test 1: Explain
-    header("TEST 1: Explain — 'What does this code do?'")
-    run_workflow(
-        user_request="What does this code do?",
-        code=SAMPLE_CODE,
-        mode="EXPLAIN",
-        log_file=LOG_FILE,
-        trace_dir=TRACE_DIR,
-    )
-
-    # Test 2: Refactor
-    header("TEST 2: Refactor — 'Refactor this code to improve readability and add type hints'")
-    run_workflow(
-        user_request="Refactor this code to improve readability and add type hints",
-        code=SAMPLE_CODE,
-        mode="REFACTOR",
-        log_file=LOG_FILE,
-        trace_dir=TRACE_DIR,
-    )
-
-    # Test 3: Document
-    header("TEST 3: Document — 'Add numpy-style docstrings to this code'")
-    run_workflow(
-        user_request="Add numpy-style docstrings to this code",
-        code=SAMPLE_CODE,
-        mode="DOCUMENT",
-        log_file=LOG_FILE,
-        trace_dir=TRACE_DIR,
-    )
-
-    # Test 4: Refactor + Document
-    header("TEST 4: Refactor + Document — 'Refactor this code and then add documentation'")
-    run_workflow(
-        user_request="Refactor this code and then add documentation",
-        code=SAMPLE_CODE,
-        mode="REFACTOR_DOCUMENT",
-        log_file=LOG_FILE,
-        trace_dir=TRACE_DIR,
-    )
-
-    # Test 5: Explain (natural language variation)
-    header("TEST 5: Explain — 'Can you help me understand what's going on here?'")
-    run_workflow(
-        user_request="Can you help me understand what's going on here?",
-        code=SAMPLE_CODE,
-        mode="EXPLAIN",
-        log_file=LOG_FILE,
-        trace_dir=TRACE_DIR,
-    )
-
-    # Test 6: Refactor (performance focus)
-    header("TEST 6: Refactor — 'Make this code more efficient'")
-    run_workflow(
-        user_request="Make this code more efficient",
-        code=SAMPLE_CODE,
-        mode="REFACTOR",
-        log_file=LOG_FILE,
-        trace_dir=TRACE_DIR,
-    )
+    traces: list[TraceLog] = []
+    for i, tc in enumerate(test_cases, 1):
+        header(f"TEST {i}: {tc['user_request']}")
+        trace_dict = run_sync(tc["user_request"], code, log_file=LOG_FILE, trace_dir=TRACE_DIR)
+        traces.append(TraceLog.model_validate(trace_dict))
 
     header("DEMO COMPLETE")
-    print(f"Traces saved to: {TRACE_DIR}/\n")
+    print(f"Saved {len(traces)} traces to: {TRACE_DIR}/\n")
+    return traces
 
 
 if __name__ == "__main__":

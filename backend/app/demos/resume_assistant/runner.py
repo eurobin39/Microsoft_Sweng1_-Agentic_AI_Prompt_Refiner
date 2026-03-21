@@ -8,7 +8,7 @@ Agents are called directly so we can record start/end times around each call.
 import logging
 from typing import Any
 
-from .agents import collect_info, analyze_job, write_resume, review_resume
+from .definitions import collect_info, analyze_job, write_resume, review_resume
 from .logger import WorkflowTracer, setup_logging
 
 
