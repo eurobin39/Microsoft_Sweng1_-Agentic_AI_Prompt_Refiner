@@ -1,3 +1,5 @@
+from typing import Any
+
 from agent_framework import ChatAgent, tool
 from agent_framework.azure import AzureOpenAIChatClient
 
