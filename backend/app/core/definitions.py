@@ -124,18 +124,20 @@ def validate_handoffs(trace_json: str, expected_behavior: str) -> str:
 
 # ═══════════════════════════ Refiner Tools ═══════════════════════════
 
-# TODO: implement diff_prompts(original: str, refined: str) -> str
-#       Return a structured diff showing exactly what changed between the original
-#       and refined system prompt.
-
-# TODO: implement estimate_token_count(prompt: str) -> str
-#       Estimate the token count of the prompt (character-based approximation or tiktoken).
-#       Guards against the refined prompt ballooning in size.
-
-# TODO: implement validate_prompt_structure(prompt: str) -> str
-#       Check that the refined prompt still contains key sections
-#       (instructions, constraints, output format, examples).
-
+def create_judge_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
+    return ChatAgent(
+        name="judge_agent",
+        instructions=JUDGE_SYSTEM_PROMPT,
+        chat_client=chat_client,
+        tools=[
+            store_evaluation_result,
+            extract_agent_prompts,
+            compare_tool_usage,
+            compare_execution_order,
+            compare_output_to_expected,
+            validate_handoffs
+        ], 
+    )
 
 # ═══════════════════════════ System Prompts ═══════════════════════════
 
