@@ -1,12 +1,13 @@
 import json
 import difflib
-
+from typing import Any
 
 from agent_framework import ChatAgent, tool
 from agent_framework.azure import AzureOpenAIChatClient
 
 from app.services.judge_tools import save_evaluation_result
 from app.services.refiner_tools import save_refinement_result
+
 
 @tool(
     name="store_evaluation_result",
@@ -34,7 +35,7 @@ def store_refinement_result(
         changes=changes,
         expected_impact=expected_impact,
     )
-    
+
 
 # ═══════════════════════════ Judge Tools ═══════════════════════════
 
@@ -45,99 +46,68 @@ def store_refinement_result(
 def extract_agent_prompts(trace_json: str) -> str:
     try:
         trace = json.loads(trace_json)
-        # This actually extracts all the the instructions used by each agent in the trace
-        prompts = {step.get("agent_name", "unknown"): step.get("instructions", "") for step in trace.get("steps", [])}
+        prompts = {
+            step.get("agent_name", "unknown"): step.get("instructions", "")
+            for step in trace.get("steps", [])
+        }
         return json.dumps(prompts, indent=2)
     except Exception as e:
         return f"Error extracting prompts: {str(e)}"
 
-@tool(
-    name="compare_tool_usage",
-    description="Surface gaps/unexpected calls between available, expected, and actually-called tools."
-)
-def compare_tool_usage(trace_json: str, expected_behavior: str, tools_available: str) -> str:
-    try:
-        trace = json.loads(trace_json)
-        called_tools = [call.get("tool_name") for step in trace.get("steps", []) for call in step.get("tool_calls", [])]
-        
-        return json.dumps({
-            "tools_available": tools_available,
-            "tools_called": called_tools,
-            "expected_behavior": expected_behavior,
-            "analysis": "Please evaluate if the called tools match the expected behavior."
-        }, indent=2)
-    except Exception as e:
-        return f"Error comparing tool usage: {str(e)}"
 
-@tool(
-    name="compare_execution_order",
-    description="Flag missing or out-of-order agents vs. the expected sequence."
-)
-def compare_execution_order(trace_json: str, expected_behavior: str) -> str:
-    try:
-        trace = json.loads(trace_json)
-        actual_order = [step.get("agent_name") for step in trace.get("steps", [])]
-        
-        return json.dumps({
-            "actual_execution_order": actual_order,
-            "expected_behavior": expected_behavior,
-            "analysis": "Please check if the actual sequence of agents aligns with the expected behavior."
-        }, indent=2)
-    except Exception as e:
-        return f"Error comparing execution order: {str(e)}"
+# TODO: implement compare_tool_usage(trace_json: str, expected_behavior: str, tools_available: str) -> str
+#       Parse tools_available into a set of known tool names.
+#       Extract every tool_name from trace["steps"][*]["tool_calls"][*] into a called set.
+#       Infer which tools *should* have been called from expected_behavior (keyword/heuristic match
+#       against the available set is fine — the judge LLM handles final reasoning).
+#       Return a JSON object with three keys: "available", "called", "unexpected" (called − available),
+#       and "missing" (expected − called). These sets are what the judge needs — do not ask the LLM
+#       to do set arithmetic that Python can do deterministically.
 
-@tool(
-    name="compare_output_to_expected",
-    description="Diff final output against ground-truth; semantic assessment left to the LLM."
-)
-def compare_output_to_expected(final_output: str, expected_output: str, expected_behavior: str) -> str:
-    return json.dumps({
-        "final_output": final_output,
-        "expected_output": expected_output,
-        "expected_behavior": expected_behavior,
-        "note": "Assess the semantic gap between final_output and expected_output."
-    }, indent=2)
+# TODO: implement compare_execution_order(trace_json: str, expected_behavior: str) -> str
+#       Extract the ordered list of agent_name values from trace["steps"].
+#       Parse expected_behavior for agent names that appear in the trace (case-insensitive match).
+#       Produce a side-by-side comparison: expected sequence vs actual sequence.
+#       Flag (label clearly in the output) any agents that are missing from the actual run or appear
+#       out of position relative to the expected sequence. The structural flags are the value here —
+#       the judge LLM interprets severity, but the detection must happen in this function.
 
-@tool(
-    name="validate_handoffs",
-    description="Verify agents handed off to each other as expected."
-)
-def validate_handoffs(trace_json: str, expected_behavior: str) -> str:
-    try:
-        trace = json.loads(trace_json)
-        handoffs = []
-        steps = trace.get("steps", [])
-        for i in range(len(steps) - 1):
-            handoffs.append({
-                "from": steps[i].get("agent_name"),
-                "to": steps[i+1].get("agent_name")
-            })
-            
-        return json.dumps({
-            "actual_handoffs": handoffs,
-            "expected_behavior": expected_behavior
-        }, indent=2)
-    except Exception as e:
-        return f"Error validating handoffs: {str(e)}"
-#       to each other as the expected_behavior implies....
+# TODO: implement compare_output_to_expected(final_output: str, expected_output: str, expected_behavior: str) -> str
+#       Use difflib.unified_diff (or ndiff) to produce a line-by-line structural diff between
+#       expected_output and final_output. Include the raw diff lines in the return value.
+#       Also include a word-level similarity ratio via difflib.SequenceMatcher so the judge has a
+#       numeric signal alongside the diff. Semantic assessment is still the judge LLM's job, but the
+#       structural diff must be computed here — that is why difflib was imported.
+
+# TODO: implement validate_handoffs(trace_json: str, expected_behavior: str) -> str
+#       Build the list of actual (from, to) handoff pairs by iterating consecutive steps in
+#       trace["steps"]. Parse expected_behavior for agent names and infer the expected handoff chain
+#       from their order of mention. Compare actual vs expected handoff pairs and clearly label
+#       each pair as EXPECTED, UNEXPECTED, or MISSING. Return all three categories in the JSON so
+#       the judge does not have to re-derive them.
 
 
 # ═══════════════════════════ Refiner Tools ═══════════════════════════
 
-def create_judge_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
-    return ChatAgent(
-        name="judge_agent",
-        instructions=JUDGE_SYSTEM_PROMPT,
-        chat_client=chat_client,
-        tools=[
-            store_evaluation_result,
-            extract_agent_prompts,
-            compare_tool_usage,
-            compare_execution_order,
-            compare_output_to_expected,
-            validate_handoffs
-        ], 
-    )
+# TODO: implement diff_prompts(original: str, refined: str) -> str
+#       Use difflib.unified_diff to produce a structured, line-by-line diff between original and
+#       refined. Return the diff as a string (not a raw list) with a brief header showing total
+#       lines added and removed. Called twice by the refiner: once on the original against itself
+#       to understand structure, and once on original vs final refined to summarise all changes.
+
+# TODO: implement estimate_token_count(prompt: str) -> str
+#       Return a token estimate for the prompt. Prefer tiktoken (cl100k_base encoding) if available;
+#       fall back to len(prompt) // 4 if not. Return a JSON object with "estimated_tokens",
+#       "method" ("tiktoken" or "char_heuristic"), and "150pct_cap" (estimated_tokens * 1.5) so the
+#       refiner can immediately see the hard limit it must not exceed.
+
+# TODO: implement validate_prompt_structure(prompt: str) -> str
+#       Check that the prompt contains all four required sections: instructions, constraints,
+#       output format, and examples. Do case-insensitive keyword matching — a section counts as
+#       present if its header keyword appears in the text. Return a JSON object with "present" (list
+#       of found sections), "missing" (list of absent sections), and "valid" (bool: missing is empty).
+#       If "valid" is false the refiner must revise before finalising.
+
 
 # ═══════════════════════════ System Prompts ═══════════════════════════
 
@@ -220,7 +190,12 @@ def create_judge_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
         name="judge_agent",
         instructions=JUDGE_SYSTEM_PROMPT,
         chat_client=chat_client,
-        tools=[],  # TODO: add judge tools once implemented
+        tools=[
+            store_evaluation_result,
+            extract_agent_prompts,
+            # TODO: add compare_tool_usage, compare_execution_order,
+            #       compare_output_to_expected, validate_handoffs once implemented
+        ],
     )
 
 
@@ -229,5 +204,8 @@ def create_refiner_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
         name="refiner_agent",
         instructions=REFINER_SYSTEM_PROMPT,
         chat_client=chat_client,
-        tools=[],  # TODO: add refiner tools once implemented
+        tools=[
+            store_refinement_result,
+            # TODO: add diff_prompts, estimate_token_count, validate_prompt_structure once implemented
+        ],
     )
