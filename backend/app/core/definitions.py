@@ -1,3 +1,5 @@
+import json
+import difflib
 from typing import Any
 
 from agent_framework import ChatAgent, tool
@@ -5,6 +7,7 @@ from agent_framework.azure import AzureOpenAIChatClient
 
 from app.services.judge_tools import save_evaluation_result
 from app.services.refiner_tools import save_refinement_result
+
 
 @tool(
     name="store_evaluation_result",
@@ -32,44 +35,233 @@ def store_refinement_result(
         changes=changes,
         expected_impact=expected_impact,
     )
-    
+
 
 # ═══════════════════════════ Judge Tools ═══════════════════════════
 
-# TODO: implement extract_agent_prompts(trace_json: str) -> str
-#       Parse the trace and return each agent's name → instructions mapping.
-#       Lets the judge check whether agents were correctly prompted for the task.
+@tool(
+    name="extract_agent_prompts",
+    description="Parse the trace and return a name -> instructions mapping per agent."
+)
+def extract_agent_prompts(trace_json: str) -> str:
+    try:
+        trace = json.loads(trace_json)
+        prompts = {
+            step.get("agent_name", "unknown"): step.get("instructions", "")
+            for step in trace.get("steps", [])
+        }
+        return json.dumps(prompts, indent=2)
+    except Exception as e:
+        return f"Error extracting prompts: {str(e)}"
 
-# TODO: implement compare_tool_usage(trace_json: str, expected_behavior: str, tools_available: str) -> str
-#       Compare tools available vs tools that should have been used (inferred from expected_behavior)
-#       vs tools actually called (from trace tool_calls). Surface any gaps or unexpected calls.
 
-# TODO: implement compare_execution_order(trace_json: str, expected_behavior: str) -> str
-#       Extract actual execution_order from trace and compare against the expected agent sequence
-#       inferred from expected_behavior. Flag missing or out-of-order agents.
+@tool(
+    name="compare_tool_usage",
+    description="Surface gaps/unexpected calls between available, expected, and actually-called tools."
+)
+def compare_tool_usage(trace_json: str, expected_behavior: str, tools_available: str) -> str:
+    try:
+        trace = json.loads(trace_json)
+        
+        # 1. Parse available tools into a set
+        try:
+            available_set = set(json.loads(tools_available))
+        except (json.JSONDecodeError, ValueError):
+            available_set = set([t.strip() for t in tools_available.split(',') if t.strip()])
+            
+        # 2. Extract actually called tools
+        called_set = set()
+        for step in trace.get("steps", []):
+            for call in step.get("tool_calls", []):
+                if tool_name := call.get("tool_name"):
+                    called_set.add(tool_name)
+                    
+        # 3. Infer expectef tools (heuristic match)
+        expected_behavior_lower = expected_behavior.lower()
+        expected_set = {t for t in available_set if t.lower() in expected_behavior_lower}
+        
+        # 4. Set arithmetic (Unexpected = Called \ Available, Missing = Expected \ Called)
+        unexpected = list(called_set - available_set)
+        missing = list(expected_set - called_set)
+        
+        return json.dumps({
+            "available": list(available_set),
+            "called": list(called_set),
+            "unexpected": unexpected,
+            "missing": missing
+        }, indent=2)
+    except Exception as e:
+        return f"Error comparing tool usage: {str(e)}"
 
-# TODO: implement compare_output_to_expected(final_output: str, expected_output: str, expected_behavior: str) -> str
-#       Diff the agent's final_output against the ground-truth expected_output from the test case.
-#       Structural diff is heuristic; semantic gap assessment is left to the judge LLM.
 
-# TODO: implement validate_handoffs(trace_json: str, expected_behavior: str) -> str
-#       Extract actual handoffs from the trace and check whether the right agents handed off
-#       to each other as the expected_behavior implies.
+@tool(
+    name="compare_execution_order",
+    description="Flag missing or out-of-order agents vs. the expected sequence."
+)
+def compare_execution_order(trace_json: str, expected_behavior: str) -> str:
+    try:
+        trace = json.loads(trace_json)
+        actual_order = [step.get("agent_name", "unknown") for step in trace.get("steps", [])]
+        unique_actual = list(dict.fromkeys(actual_order))
+        
+        # Infer expected order by finding where known agents appear in the expected_behavior text
+        expected_behavior_lower = expected_behavior.lower()
+        agent_positions = []
+        for agent in unique_actual:
+            pos = expected_behavior_lower.find(agent.lower())
+            if pos != -1:
+                agent_positions.append((pos, agent))
+        
+        agent_positions.sort()
+        expected_order = [agent for pos, agent in agent_positions]
+        
+        flags = []
+        for i, agent in enumerate(actual_order):
+            if agent not in expected_order:
+                flags.append({"position": i, "agent": agent, "status": "UNEXPECTED"})
+            else:
+                expected_idx = expected_order.index(agent)
+                actual_idx_in_unique = unique_actual.index(agent)
+                if expected_idx != actual_idx_in_unique:
+                    flags.append({"position": i, "agent": agent, "status": "OUT_OF_ORDER"})
+                    
+        for agent in expected_order:
+            if agent not in actual_order:
+                flags.append({"agent": agent, "status": "MISSING"})
+
+        return json.dumps({
+            "expected_sequence": expected_order,
+            "actual_sequence": actual_order,
+            "flags": flags
+        }, indent=2)
+    except Exception as e:
+        return f"Error comparing execution order: {str(e)}"
+
+
+@tool(
+    name="compare_output_to_expected",
+    description="Diff final output against ground-truth; semantic assessment left to the LLM."
+)
+def compare_output_to_expected(final_output: str, expected_output: str, expected_behavior: str) -> str:
+    try:
+        diff_lines = list(difflib.unified_diff(
+            expected_output.splitlines(),
+            final_output.splitlines(),
+            lineterm=''
+        ))
+        similarity = difflib.SequenceMatcher(None, expected_output, final_output).ratio()
+
+        return json.dumps({
+            "structural_diff": "\n".join(diff_lines),
+            "similarity_ratio": similarity,
+            "expected_behavior": expected_behavior
+        }, indent=2)
+    except Exception as e:
+        return f"Error comparing outputs: {str(e)}"
+
+
+@tool(
+    name="validate_handoffs",
+    description="Verify agents handed off to each other as expected."
+)
+def validate_handoffs(trace_json: str, expected_behavior: str) -> str:
+    try:
+        trace = json.loads(trace_json)
+        steps = trace.get("steps", [])
+        
+        actual_pairs = []
+        for i in range(len(steps) - 1):
+            actual_pairs.append((steps[i].get("agent_name"), steps[i+1].get("agent_name")))
+            
+        # Infer expected pairs using the same string-matching heuristic
+        unique_actual = list(dict.fromkeys([s.get("agent_name") for s in steps]))
+        expected_behavior_lower = expected_behavior.lower()
+        
+        agent_positions = []
+        for agent in unique_actual:
+            pos = expected_behavior_lower.find(agent.lower())
+            if pos != -1:
+                agent_positions.append((pos, agent))
+        agent_positions.sort()
+        expected_order = [agent for pos, agent in agent_positions]
+        
+        expected_pairs = []
+        for i in range(len(expected_order) - 1):
+            expected_pairs.append((expected_order[i], expected_order[i+1]))
+            
+        expected_pairs_set = set(expected_pairs)
+        actual_pairs_set = set(actual_pairs)
+
+        expected = [{"from": p[0], "to": p[1]} for p in actual_pairs if p in expected_pairs_set]
+        unexpected = [{"from": p[0], "to": p[1]} for p in actual_pairs if p not in expected_pairs_set]
+        missing = [{"from": p[0], "to": p[1]} for p in expected_pairs if p not in actual_pairs_set]
+
+        return json.dumps({
+            "expected": expected,
+            "unexpected": unexpected,
+            "missing": missing
+        }, indent=2)
+    except Exception as e:
+        return f"Error validating handoffs: {str(e)}"
 
 
 # ═══════════════════════════ Refiner Tools ═══════════════════════════
 
-# TODO: implement diff_prompts(original: str, refined: str) -> str
-#       Return a structured diff showing exactly what changed between the original
-#       and refined system prompt.
+@tool(
+    name="diff_prompts",
+    description="Produces a structured diff between original and refined system prompt."
+)
+def diff_prompts(original: str, refined: str) -> str:
+    diff_lines = list(difflib.unified_diff(
+        original.splitlines(), 
+        refined.splitlines(), 
+        lineterm=''
+    ))
+    
+    added = sum(1 for line in diff_lines if line.startswith('+') and not line.startswith('+++'))
+    removed = sum(1 for line in diff_lines if line.startswith('-') and not line.startswith('---'))
+    
+    header = f"Lines added: {added}, Lines removed: {removed}\n\n"
+    return header + "\n".join(diff_lines)
 
-# TODO: implement estimate_token_count(prompt: str) -> str
-#       Estimate the token count of the prompt (character-based approximation or tiktoken).
-#       Guards against the refined prompt ballooning in size.
 
-# TODO: implement validate_prompt_structure(prompt: str) -> str
-#       Check that the refined prompt still contains key sections
-#       (instructions, constraints, output format, examples).
+@tool(
+    name="estimate_token_count",
+    description="Character-based approximation or tiktoken; used to enforce the 150% size cap."
+)
+def estimate_token_count(prompt: str) -> str:
+    try:
+        import tiktoken
+        enc = tiktoken.get_encoding("cl100k_base")
+        tokens = len(enc.encode(prompt))
+        method = "tiktoken"
+    except ImportError:
+        tokens = len(prompt) // 4
+        method = "char_heuristic"
+        
+    return json.dumps({
+        "estimated_tokens": tokens,
+        "method": method,
+        "150pct_cap": int(tokens * 1.5)
+    }, indent=2)
+
+
+@tool(
+    name="validate_prompt_structure",
+    description="Check the refined prompt still contains required sections."
+)
+def validate_prompt_structure(prompt: str) -> str:
+    required_sections = ["instructions", "constraints", "output format", "examples"]
+    prompt_lower = prompt.lower()
+    
+    present = [req for req in required_sections if req in prompt_lower]
+    missing = [req for req in required_sections if req not in prompt_lower]
+    
+    return json.dumps({
+        "present": present,
+        "missing": missing,
+        "valid": len(missing) == 0
+    }, indent=2)
 
 
 # ═══════════════════════════ System Prompts ═══════════════════════════
@@ -153,7 +345,14 @@ def create_judge_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
         name="judge_agent",
         instructions=JUDGE_SYSTEM_PROMPT,
         chat_client=chat_client,
-        tools=[],  # TODO: add judge tools once implemented
+        tools=[
+            store_evaluation_result,
+            extract_agent_prompts,
+            compare_tool_usage,
+            compare_execution_order,
+            compare_output_to_expected,
+            validate_handoffs
+        ],
     )
 
 
@@ -162,5 +361,10 @@ def create_refiner_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
         name="refiner_agent",
         instructions=REFINER_SYSTEM_PROMPT,
         chat_client=chat_client,
-        tools=[],  # TODO: add refiner tools once implemented
+        tools=[
+            store_refinement_result,
+            diff_prompts,
+            estimate_token_count,
+            validate_prompt_structure
+        ],
     )
