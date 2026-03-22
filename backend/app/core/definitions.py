@@ -55,58 +55,207 @@ def extract_agent_prompts(trace_json: str) -> str:
         return f"Error extracting prompts: {str(e)}"
 
 
-# TODO: implement compare_tool_usage(trace_json: str, expected_behavior: str, tools_available: str) -> str
-#       Parse tools_available into a set of known tool names.
-#       Extract every tool_name from trace["steps"][*]["tool_calls"][*] into a called set.
-#       Infer which tools *should* have been called from expected_behavior (keyword/heuristic match
-#       against the available set is fine — the judge LLM handles final reasoning).
-#       Return a JSON object with three keys: "available", "called", "unexpected" (called − available),
-#       and "missing" (expected − called). These sets are what the judge needs — do not ask the LLM
-#       to do set arithmetic that Python can do deterministically.
+@tool(
+    name="compare_tool_usage",
+    description="Surface gaps/unexpected calls between available, expected, and actually-called tools."
+)
+def compare_tool_usage(trace_json: str, expected_behavior: str, tools_available: str) -> str:
+    try:
+        trace = json.loads(trace_json)
+        
+        # 1. Parse available tools into a set
+        try:
+            available_set = set(json.loads(tools_available))
+        except:
+            available_set = set([t.strip() for t in tools_available.split(',') if t.strip()])
+            
+        # 2. Extract actually called tools
+        called_set = set()
+        for step in trace.get("steps", []):
+            for call in step.get("tool_calls", []):
+                if tool_name := call.get("tool_name"):
+                    called_set.add(tool_name)
+                    
+        # 3. Infer expectef tools (heuristic match)
+        expected_behavior_lower = expected_behavior.lower()
+        expected_set = {t for t in available_set if t.lower() in expected_behavior_lower}
+        
+        # 4. Set arithmetic (Unexpected = Called \ Available, Missing = Expected \ Called)
+        unexpected = list(called_set - available_set)
+        missing = list(expected_set - called_set)
+        
+        return json.dumps({
+            "available": list(available_set),
+            "called": list(called_set),
+            "unexpected": unexpected,
+            "missing": missing
+        }, indent=2)
+    except Exception as e:
+        return f"Error comparing tool usage: {str(e)}"
 
-# TODO: implement compare_execution_order(trace_json: str, expected_behavior: str) -> str
-#       Extract the ordered list of agent_name values from trace["steps"].
-#       Parse expected_behavior for agent names that appear in the trace (case-insensitive match).
-#       Produce a side-by-side comparison: expected sequence vs actual sequence.
-#       Flag (label clearly in the output) any agents that are missing from the actual run or appear
-#       out of position relative to the expected sequence. The structural flags are the value here —
-#       the judge LLM interprets severity, but the detection must happen in this function.
 
-# TODO: implement compare_output_to_expected(final_output: str, expected_output: str, expected_behavior: str) -> str
-#       Use difflib.unified_diff (or ndiff) to produce a line-by-line structural diff between
-#       expected_output and final_output. Include the raw diff lines in the return value.
-#       Also include a word-level similarity ratio via difflib.SequenceMatcher so the judge has a
-#       numeric signal alongside the diff. Semantic assessment is still the judge LLM's job, but the
-#       structural diff must be computed here — that is why difflib was imported.
+@tool(
+    name="compare_execution_order",
+    description="Flag missing or out-of-order agents vs. the expected sequence."
+)
+def compare_execution_order(trace_json: str, expected_behavior: str) -> str:
+    try:
+        trace = json.loads(trace_json)
+        actual_order = [step.get("agent_name", "unknown") for step in trace.get("steps", [])]
+        unique_actual = list(dict.fromkeys(actual_order))
+        
+        # Infer expected order by finding where known agents appear in the expected_behavior text
+        expected_behavior_lower = expected_behavior.lower()
+        agent_positions = []
+        for agent in unique_actual:
+            pos = expected_behavior_lower.find(agent.lower())
+            if pos != -1:
+                agent_positions.append((pos, agent))
+        
+        agent_positions.sort()
+        expected_order = [agent for pos, agent in agent_positions]
+        
+        flags = []
+        for i, agent in enumerate(actual_order):
+            if agent not in expected_order:
+                flags.append({"position": i, "agent": agent, "status": "UNEXPECTED"})
+            else:
+                expected_idx = expected_order.index(agent)
+                if expected_idx > i:
+                    flags.append({"position": i, "agent": agent, "status": "OUT_OF_ORDER"})
+                    
+        for agent in expected_order:
+            if agent not in actual_order:
+                flags.append({"agent": agent, "status": "MISSING"})
 
-# TODO: implement validate_handoffs(trace_json: str, expected_behavior: str) -> str
-#       Build the list of actual (from, to) handoff pairs by iterating consecutive steps in
-#       trace["steps"]. Parse expected_behavior for agent names and infer the expected handoff chain
-#       from their order of mention. Compare actual vs expected handoff pairs and clearly label
-#       each pair as EXPECTED, UNEXPECTED, or MISSING. Return all three categories in the JSON so
-#       the judge does not have to re-derive them.
+        return json.dumps({
+            "expected_sequence": expected_order,
+            "actual_sequence": actual_order,
+            "flags": flags
+        }, indent=2)
+    except Exception as e:
+        return f"Error comparing execution order: {str(e)}"
+
+
+@tool(
+    name="compare_output_to_expected",
+    description="Diff final output against ground-truth; semantic assessment left to the LLM."
+)
+def compare_output_to_expected(final_output: str, expected_output: str, expected_behavior: str) -> str:
+    diff_lines = list(difflib.unified_diff(
+        expected_output.splitlines(), 
+        final_output.splitlines(), 
+        lineterm=''
+    ))
+    similarity = difflib.SequenceMatcher(None, expected_output, final_output).ratio()
+    
+    return json.dumps({
+        "structural_diff": "\n".join(diff_lines),
+        "similarity_ratio": similarity,
+        "expected_behavior": expected_behavior
+    }, indent=2)
+
+
+@tool(
+    name="validate_handoffs",
+    description="Verify agents handed off to each other as expected."
+)
+def validate_handoffs(trace_json: str, expected_behavior: str) -> str:
+    try:
+        trace = json.loads(trace_json)
+        steps = trace.get("steps", [])
+        
+        actual_pairs = []
+        for i in range(len(steps) - 1):
+            actual_pairs.append((steps[i].get("agent_name"), steps[i+1].get("agent_name")))
+            
+        # Infer expected pairs using the same string-matching heuristic
+        unique_actual = list(dict.fromkeys([s.get("agent_name") for s in steps]))
+        expected_behavior_lower = expected_behavior.lower()
+        
+        agent_positions = []
+        for agent in unique_actual:
+            pos = expected_behavior_lower.find(agent.lower())
+            if pos != -1:
+                agent_positions.append((pos, agent))
+        agent_positions.sort()
+        expected_order = [agent for pos, agent in agent_positions]
+        
+        expected_pairs = []
+        for i in range(len(expected_order) - 1):
+            expected_pairs.append((expected_order[i], expected_order[i+1]))
+            
+        results = []
+        for pair in actual_pairs:
+            status = "EXPECTED" if pair in expected_pairs else "UNEXPECTED"
+            results.append({"from": pair[0], "to": pair[1], "status": status})
+            
+        for pair in expected_pairs:
+            if pair not in actual_pairs:
+                results.append({"from": pair[0], "to": pair[1], "status": "MISSING"})
+                
+        return json.dumps(results, indent=2)
+    except Exception as e:
+        return f"Error validating handoffs: {str(e)}"
 
 
 # ═══════════════════════════ Refiner Tools ═══════════════════════════
 
-# TODO: implement diff_prompts(original: str, refined: str) -> str
-#       Use difflib.unified_diff to produce a structured, line-by-line diff between original and
-#       refined. Return the diff as a string (not a raw list) with a brief header showing total
-#       lines added and removed. Called twice by the refiner: once on the original against itself
-#       to understand structure, and once on original vs final refined to summarise all changes.
+@tool(
+    name="diff_prompts",
+    description="Produces a structured diff between original and refined system prompt."
+)
+def diff_prompts(original: str, refined: str) -> str:
+    diff_lines = list(difflib.unified_diff(
+        original.splitlines(), 
+        refined.splitlines(), 
+        lineterm=''
+    ))
+    
+    added = sum(1 for line in diff_lines if line.startswith('+') and not line.startswith('+++'))
+    removed = sum(1 for line in diff_lines if line.startswith('-') and not line.startswith('---'))
+    
+    header = f"Lines added: {added}, Lines removed: {removed}\n\n"
+    return header + "\n".join(diff_lines)
 
-# TODO: implement estimate_token_count(prompt: str) -> str
-#       Return a token estimate for the prompt. Prefer tiktoken (cl100k_base encoding) if available;
-#       fall back to len(prompt) // 4 if not. Return a JSON object with "estimated_tokens",
-#       "method" ("tiktoken" or "char_heuristic"), and "150pct_cap" (estimated_tokens * 1.5) so the
-#       refiner can immediately see the hard limit it must not exceed.
 
-# TODO: implement validate_prompt_structure(prompt: str) -> str
-#       Check that the prompt contains all four required sections: instructions, constraints,
-#       output format, and examples. Do case-insensitive keyword matching — a section counts as
-#       present if its header keyword appears in the text. Return a JSON object with "present" (list
-#       of found sections), "missing" (list of absent sections), and "valid" (bool: missing is empty).
-#       If "valid" is false the refiner must revise before finalising.
+@tool(
+    name="estimate_token_count",
+    description="Character-based approximation or tiktoken; used to enforce the 150% size cap."
+)
+def estimate_token_count(prompt: str) -> str:
+    try:
+        import tiktoken
+        enc = tiktoken.get_encoding("cl100k_base")
+        tokens = len(enc.encode(prompt))
+        method = "tiktoken"
+    except ImportError:
+        tokens = len(prompt) // 4
+        method = "char_heuristic"
+        
+    return json.dumps({
+        "estimated_tokens": tokens,
+        "method": method,
+        "150pct_cap": int(tokens * 1.5)
+    }, indent=2)
+
+
+@tool(
+    name="validate_prompt_structure",
+    description="Check the refined prompt still contains required sections."
+)
+def validate_prompt_structure(prompt: str) -> str:
+    required_sections = ["instructions", "constraints", "output format", "examples"]
+    prompt_lower = prompt.lower()
+    
+    present = [req for req in required_sections if req in prompt_lower]
+    missing = [req for req in required_sections if req not in prompt_lower]
+    
+    return json.dumps({
+        "present": present,
+        "missing": missing,
+        "valid": len(missing) == 0
+    }, indent=2)
 
 
 # ═══════════════════════════ System Prompts ═══════════════════════════
@@ -193,8 +342,10 @@ def create_judge_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
         tools=[
             store_evaluation_result,
             extract_agent_prompts,
-            # TODO: add compare_tool_usage, compare_execution_order,
-            #       compare_output_to_expected, validate_handoffs once implemented
+            compare_tool_usage,
+            compare_execution_order,
+            compare_output_to_expected,
+            validate_handoffs
         ],
     )
 
@@ -206,6 +357,8 @@ def create_refiner_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
         chat_client=chat_client,
         tools=[
             store_refinement_result,
-            # TODO: add diff_prompts, estimate_token_count, validate_prompt_structure once implemented
+            diff_prompts,
+            estimate_token_count,
+            validate_prompt_structure
         ],
     )
