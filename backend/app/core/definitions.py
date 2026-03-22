@@ -1,3 +1,7 @@
+import json
+import difflib
+
+
 from agent_framework import ChatAgent, tool
 from agent_framework.azure import AzureOpenAIChatClient
 
@@ -34,25 +38,88 @@ def store_refinement_result(
 
 # ═══════════════════════════ Judge Tools ═══════════════════════════
 
-# TODO: implement extract_agent_prompts(trace_json: str) -> str
-#       Parse the trace and return each agent's name → instructions mapping.
-#       Lets the judge check whether agents were correctly prompted for the task.
+@tool(
+    name="extract_agent_prompts",
+    description="Parse the trace and return a name -> instructions mapping per agent."
+)
+def extract_agent_prompts(trace_json: str) -> str:
+    try:
+        trace = json.loads(trace_json)
+        # This actually extracts all the the instructions used by each agent in the trace
+        prompts = {step.get("agent_name", "unknown"): step.get("instructions", "") for step in trace.get("steps", [])}
+        return json.dumps(prompts, indent=2)
+    except Exception as e:
+        return f"Error extracting prompts: {str(e)}"
 
-# TODO: implement compare_tool_usage(trace_json: str, expected_behavior: str, tools_available: str) -> str
-#       Compare tools available vs tools that should have been used (inferred from expected_behavior)
-#       vs tools actually called (from trace tool_calls). Surface any gaps or unexpected calls.
+@tool(
+    name="compare_tool_usage",
+    description="Surface gaps/unexpected calls between available, expected, and actually-called tools."
+)
+def compare_tool_usage(trace_json: str, expected_behavior: str, tools_available: str) -> str:
+    try:
+        trace = json.loads(trace_json)
+        called_tools = [call.get("tool_name") for step in trace.get("steps", []) for call in step.get("tool_calls", [])]
+        
+        return json.dumps({
+            "tools_available": tools_available,
+            "tools_called": called_tools,
+            "expected_behavior": expected_behavior,
+            "analysis": "Please evaluate if the called tools match the expected behavior."
+        }, indent=2)
+    except Exception as e:
+        return f"Error comparing tool usage: {str(e)}"
 
-# TODO: implement compare_execution_order(trace_json: str, expected_behavior: str) -> str
-#       Extract actual execution_order from trace and compare against the expected agent sequence
-#       inferred from expected_behavior. Flag missing or out-of-order agents.
+@tool(
+    name="compare_execution_order",
+    description="Flag missing or out-of-order agents vs. the expected sequence."
+)
+def compare_execution_order(trace_json: str, expected_behavior: str) -> str:
+    try:
+        trace = json.loads(trace_json)
+        actual_order = [step.get("agent_name") for step in trace.get("steps", [])]
+        
+        return json.dumps({
+            "actual_execution_order": actual_order,
+            "expected_behavior": expected_behavior,
+            "analysis": "Please check if the actual sequence of agents aligns with the expected behavior."
+        }, indent=2)
+    except Exception as e:
+        return f"Error comparing execution order: {str(e)}"
 
-# TODO: implement compare_output_to_expected(final_output: str, expected_output: str, expected_behavior: str) -> str
-#       Diff the agent's final_output against the ground-truth expected_output from the test case.
-#       Structural diff is heuristic; semantic gap assessment is left to the judge LLM.
+@tool(
+    name="compare_output_to_expected",
+    description="Diff final output against ground-truth; semantic assessment left to the LLM."
+)
+def compare_output_to_expected(final_output: str, expected_output: str, expected_behavior: str) -> str:
+    return json.dumps({
+        "final_output": final_output,
+        "expected_output": expected_output,
+        "expected_behavior": expected_behavior,
+        "note": "Assess the semantic gap between final_output and expected_output."
+    }, indent=2)
 
-# TODO: implement validate_handoffs(trace_json: str, expected_behavior: str) -> str
-#       Extract actual handoffs from the trace and check whether the right agents handed off
-#       to each other as the expected_behavior implies.
+@tool(
+    name="validate_handoffs",
+    description="Verify agents handed off to each other as expected."
+)
+def validate_handoffs(trace_json: str, expected_behavior: str) -> str:
+    try:
+        trace = json.loads(trace_json)
+        handoffs = []
+        steps = trace.get("steps", [])
+        for i in range(len(steps) - 1):
+            handoffs.append({
+                "from": steps[i].get("agent_name"),
+                "to": steps[i+1].get("agent_name")
+            })
+            
+        return json.dumps({
+            "actual_handoffs": handoffs,
+            "expected_behavior": expected_behavior
+        }, indent=2)
+    except Exception as e:
+        return f"Error validating handoffs: {str(e)}"
+#       to each other as the expected_behavior implies....
 
 
 # ═══════════════════════════ Refiner Tools ═══════════════════════════
