@@ -66,7 +66,7 @@ def compare_tool_usage(trace_json: str, expected_behavior: str, tools_available:
         # 1. Parse available tools into a set
         try:
             available_set = set(json.loads(tools_available))
-        except:
+        except (json.JSONDecodeError, ValueError):
             available_set = set([t.strip() for t in tools_available.split(',') if t.strip()])
             
         # 2. Extract actually called tools
@@ -121,7 +121,8 @@ def compare_execution_order(trace_json: str, expected_behavior: str) -> str:
                 flags.append({"position": i, "agent": agent, "status": "UNEXPECTED"})
             else:
                 expected_idx = expected_order.index(agent)
-                if expected_idx > i:
+                actual_idx_in_unique = unique_actual.index(agent)
+                if expected_idx != actual_idx_in_unique:
                     flags.append({"position": i, "agent": agent, "status": "OUT_OF_ORDER"})
                     
         for agent in expected_order:
@@ -142,18 +143,21 @@ def compare_execution_order(trace_json: str, expected_behavior: str) -> str:
     description="Diff final output against ground-truth; semantic assessment left to the LLM."
 )
 def compare_output_to_expected(final_output: str, expected_output: str, expected_behavior: str) -> str:
-    diff_lines = list(difflib.unified_diff(
-        expected_output.splitlines(), 
-        final_output.splitlines(), 
-        lineterm=''
-    ))
-    similarity = difflib.SequenceMatcher(None, expected_output, final_output).ratio()
-    
-    return json.dumps({
-        "structural_diff": "\n".join(diff_lines),
-        "similarity_ratio": similarity,
-        "expected_behavior": expected_behavior
-    }, indent=2)
+    try:
+        diff_lines = list(difflib.unified_diff(
+            expected_output.splitlines(),
+            final_output.splitlines(),
+            lineterm=''
+        ))
+        similarity = difflib.SequenceMatcher(None, expected_output, final_output).ratio()
+
+        return json.dumps({
+            "structural_diff": "\n".join(diff_lines),
+            "similarity_ratio": similarity,
+            "expected_behavior": expected_behavior
+        }, indent=2)
+    except Exception as e:
+        return f"Error comparing outputs: {str(e)}"
 
 
 @tool(
@@ -185,16 +189,18 @@ def validate_handoffs(trace_json: str, expected_behavior: str) -> str:
         for i in range(len(expected_order) - 1):
             expected_pairs.append((expected_order[i], expected_order[i+1]))
             
-        results = []
-        for pair in actual_pairs:
-            status = "EXPECTED" if pair in expected_pairs else "UNEXPECTED"
-            results.append({"from": pair[0], "to": pair[1], "status": status})
-            
-        for pair in expected_pairs:
-            if pair not in actual_pairs:
-                results.append({"from": pair[0], "to": pair[1], "status": "MISSING"})
-                
-        return json.dumps(results, indent=2)
+        expected_pairs_set = set(expected_pairs)
+        actual_pairs_set = set(actual_pairs)
+
+        expected = [{"from": p[0], "to": p[1]} for p in actual_pairs if p in expected_pairs_set]
+        unexpected = [{"from": p[0], "to": p[1]} for p in actual_pairs if p not in expected_pairs_set]
+        missing = [{"from": p[0], "to": p[1]} for p in expected_pairs if p not in actual_pairs_set]
+
+        return json.dumps({
+            "expected": expected,
+            "unexpected": unexpected,
+            "missing": missing
+        }, indent=2)
     except Exception as e:
         return f"Error validating handoffs: {str(e)}"
 
