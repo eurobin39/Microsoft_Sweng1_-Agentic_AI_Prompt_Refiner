@@ -25,15 +25,18 @@ variables:
   PYTHONUNBUFFERED: "1"
   GIT_DEPTH: "0"
   GIT_STRATEGY: clone
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_ROOT_USER_ACTION: ignore
 
 cache:
   key: "$CI_COMMIT_REF_SLUG"
   paths:
     - .cache/pip
     - .cache/npm
+  policy: pull-push
 
 .python-job:
-  image: python:3.13
+  image: python:3.11
   before_script:
     - python --version
     - python -m pip install --upgrade pip
@@ -44,38 +47,85 @@ cache:
     - node --version
     - npm --version
 
-repo-sanity:
+backend-syntax:
   stage: validate
   extends: .python-job
   script:
-    - echo "Static sanity checks for backend routing and schemas..."
-    - python -m compileall -q backend/app
-    - grep -nE 'include_router\(health\.router, prefix="/api"' backend/app/main.py
-    - grep -nE 'include_router\(evaluation\.router, prefix="/api/v1"' backend/app/main.py
-    - grep -nE '@router\.get\("/health"\)' backend/app/api/routes/health.py
-    - grep -nE '@router\.post\("/evaluate"' backend/app/api/routes/evaluation.py
+    - echo "Compile-check backend Python files..."
+    - python -m compileall -q backend
 
-backend-unit-pytest:
+backend-runtime-smoke:
+  stage: validate
+  extends: .python-job
+  script:
+    - echo "Install backend runtime dependencies..."
+    - pip install -r backend/requirements.txt
+    - pip check
+    - cd backend
+    - echo "Import smoke check for critical backend modules..."
+    - |
+      python - <<'PY'
+      import importlib
+
+      modules = [
+          "app.main",
+          "app.core.definitions",
+          "app.core.workflow",
+          "app.core.runner",
+          "app.api.routes.health",
+          "app.api.routes.evaluation",
+          "app.api.routes.extract_blueprint",
+          "app.models.models",
+          "app.models.trace_logs",
+      ]
+
+      for module_name in modules:
+          importlib.import_module(module_name)
+          print(f"Imported: {module_name}")
+      PY
+    - echo "Validate FastAPI app object and route registration..."
+    - |
+      python - <<'PY'
+      from fastapi import FastAPI
+      from app.main import app
+
+      assert isinstance(app, FastAPI), "app.main:app is not a FastAPI instance"
+      assert app.routes, "No routes registered in app.main:app"
+      print(f"ASGI app loaded with {len(app.routes)} routes")
+      PY
+  needs: ["backend-syntax"]
+
+backend-unit-tests:
   stage: test
   extends: .python-job
   script:
     - pip install -r backend/requirements-ci.txt "pydantic>=2,<3"
     - cd backend
-    - PYTHONPATH=. pytest -q tests/test_models.py --junitxml="$CI_PROJECT_DIR/backend-unit-junit.xml"
+    - PYTHONPATH=. pytest -q tests/test_models.py --maxfail=1 --junitxml="$CI_PROJECT_DIR/backend-unit-junit.xml"
   artifacts:
     when: always
     reports:
       junit: backend-unit-junit.xml
 
-frontend-smoke:
+frontend-build:
   stage: test
   extends: .node-job
   script:
     - cd frontend
     - npm ci --prefer-offline --no-audit
-    - |
-      if [ -d app ] || [ -d pages ] || [ -d src/app ] || [ -d src/pages ]; then
-        npm run build
-      else
-        echo "No Next.js app/pages directory found on this branch; skipping build."
-      fi
+    - npm run build
+
+backend-integration-tests:
+  stage: test
+  extends: .python-job
+  script:
+    - pip install -r backend/requirements.txt -r backend/requirements-ci.txt
+    - cd backend
+    - PYTHONPATH=. pytest -q tests/test_agent_integration.py tests/test_travel_integration.py tests/test_resume_integration.py --maxfail=1 --junitxml="$CI_PROJECT_DIR/backend-integration-junit.xml"
+  artifacts:
+    when: always
+    reports:
+      junit: backend-integration-junit.xml
+  rules:
+    - if: '$RUN_BACKEND_INTEGRATION == "true"'
+    - when: never

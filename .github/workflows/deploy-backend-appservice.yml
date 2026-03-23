@@ -36,7 +36,40 @@ jobs:
       - name: Run syntax check
         working-directory: backend
         run: |
-          python -m compileall app
+          python -m compileall -q .
+
+      - name: Run import smoke check
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          import importlib
+
+          modules = [
+              "app.main",
+              "app.core.definitions",
+              "app.core.workflow",
+              "app.core.runner",
+              "app.api.routes.health",
+              "app.api.routes.evaluation",
+              "app.api.routes.extract_blueprint",
+          ]
+
+          for module_name in modules:
+              importlib.import_module(module_name)
+              print(f"Imported: {module_name}")
+          PY
+
+      - name: Validate ASGI app load
+        working-directory: backend
+        run: |
+          python - <<'PY'
+          from fastapi import FastAPI
+          from app.main import app
+
+          assert isinstance(app, FastAPI), "app.main:app is not a FastAPI instance"
+          assert app.routes, "No routes registered in app.main:app"
+          print(f"ASGI app loaded with {len(app.routes)} routes")
+          PY
 
       - name: Create deployment package
         run: |
