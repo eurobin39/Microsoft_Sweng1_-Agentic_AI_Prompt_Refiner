@@ -10,6 +10,14 @@ export default function GreenComputingPage() {
                 <li>Azure/Microsoft Foundry deployment: PUE ~1.18, renewable energy commitments, managed dynamic scaling, no idle on-premises hardware</li>
             </ul>
         </section>
+
+        <section className="rounded-2xl shadow-sm p-4 bg-slate-50">
+            <h2 className="text-xl font-semibold mb-2">Sprint 2 — WebSockets & RESTful Design</h2>
+            <ul className="list-disc list-inside space-y-1">
+                <li>WebSocket connection between frontend and backend: persistent two-way channel, only necessary data is sent</li>
+                <li>FastAPI with async RESTful endpoints: frontend and backend don't need to be loaded simultaneously, reducing compute overhead</li>
+            </ul>
+        </section>
     </main>
   );
 }
