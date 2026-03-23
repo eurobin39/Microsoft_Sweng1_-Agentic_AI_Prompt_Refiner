@@ -18,6 +18,15 @@ export default function GreenComputingPage() {
                 <li>FastAPI with async RESTful endpoints: frontend and backend don't need to be loaded simultaneously, reducing compute overhead</li>
             </ul>
         </section>
+
+        <section className="rounded-2xl shadow-sm p-4 bg-slate-50">
+            <h2 className="text-xl font-semibold mb-2">Sprint 3 — On-Demand Invocation & Observability</h2>
+            <ul className="list-disc list-inside space-y-1">
+                <li>MCP-based tool invoked only when explicitly triggered by the developer</li>
+                <li>Local hosting during development reduces reliance on always-on cloud services</li>
+                <li>Logging tracks tool invocation frequency, surfaces redundant LLM calls for optimization</li>
+            </ul>
+        </section>
     </main>
   );
 }
