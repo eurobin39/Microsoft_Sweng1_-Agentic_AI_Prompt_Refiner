@@ -20,7 +20,7 @@ const teamMembers = [
   {
     name: "Ódhran Mulvihill",
     role: "Team Member",
-    year: "2nd Year",
+    year: "3rd Year",
     bio: "Contributed to backend and project support work, including FastAPI endpoint improvements, health-check updates, and technical documentation. Also supported demo preparation and helped document the role and use of the multi-agent framework.",
   },
   {
