@@ -90,25 +90,11 @@ router = APIRouter()
 )
 async def evaluate(request: EvaluationRequest) -> EvaluationResponse:
     """
-    Evaluate an AI agent's performance against its blueprint and refine its system prompt if needed.
-
-    Use this tool when a developer wants to evaluate their agent. To call it correctly:
-
-    1. Read the agent's blueprint JSON file and pass its contents as `blueprint`.
-    2. Read all trace log JSON files (from the traces directory) and pass them as the `traces` array.
-    3. Pass `blueprint` and `traces` at the root level — do NOT wrap them in an "EvaluationRequest" key.
-
-    Schema rules to follow exactly:
-    - `agents` inside each trace must be a JSON object (dict), never a string.
-    - `evaluation_criteria` must be an object with keys: goals (list), constraints (list), priority_description (str).
-    - `tool.parameters`, `model_parameters`, `output_schema` must be JSON objects, never strings.
-    - `provider` must be one of: azure_openai, openai, anthropic, mistral, grok — omit if unknown.
-    - `context` in test_cases must be a JSON object or omitted — never an empty string.
-    - `duration_ms` must be an integer, not a string.
-    - `handoff.reason` and `handoff.timestamp` are optional — omit if not present in the source data.
-
-    Returns an EvaluationResult (overall_score 0–1, per-test results, summary) and optionally a
-    RefinementResult with an improved system prompt when overall_score < 0.7.
+    Evaluate an AI agent against its blueprint and refine its system prompt if score < 0.7.
+    Read the agent blueprint JSON file and pass as `blueprint`. Read all trace log JSON files and pass as the `traces` array.
+    Pass `blueprint` and `traces` at the root level with no wrapper key.
+    `provider` must be one of: azure_openai, openai, anthropic, mistral, grok — omit if unknown.
+    Returns overall_score 0-1, per-test results, summary, and optionally a refined system prompt.
     """
     try:
         return await run_evaluation(request.blueprint, request.traces)

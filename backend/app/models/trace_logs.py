@@ -1,4 +1,5 @@
 from __future__ import annotations
+import json
 from typing import Any, Dict, List, Optional, Union
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -79,6 +80,13 @@ class TraceLog(BaseModel):
     agents: Dict[str, AgentLog] = Field(
         default_factory=dict, description="Agent logs keyed by agent name"
     )
+
+    @field_validator("agents", mode="before")
+    @classmethod
+    def parse_agents(cls, v):
+        if isinstance(v, str) and v:
+            return json.loads(v)
+        return v
     execution_order: List[str] = Field(
         default_factory=list, description="Order in which agents ran"
     )
