@@ -86,7 +86,7 @@ type AgentRefinementResult = {
   refinement: RefinementResult | null;
 };
 
-type Stage = "idle" | "extracting" | "extracted" | "refining" | "done" | "error";
+type Stage = "idle" | "extracting" | "extracted" | "error";
 
 type ThinkingState = {
   agentName: string | null;
@@ -102,6 +102,7 @@ export default function Home() {
   const [results, setResults] = useState<AgentRefinementResult[]>([]);
   const [error, setError] = useState("");
   const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+  const [refiningAgents, setRefiningAgents] = useState<string[]>([]);
   const [thinking, setThinking] = useState<ThinkingState>({
     agentName: null,
     executor: null,
@@ -154,9 +155,15 @@ export default function Home() {
     }
   }
 
-  async function handleRefineAll() {
-    setStage("refining");
-    setResults([]);
+  function getAgentName(item: AgentBlueprintWithTraces, idx: number) {
+    return item.blueprint.agent.name ?? `Agent ${idx + 1}`;
+  }
+
+  async function runRefine(itemsToRefine: AgentBlueprintWithTraces[]) {
+    if (itemsToRefine.length === 0) return;
+
+    const namesToRefine = itemsToRefine.map(it => getAgentName(it, items.indexOf(it)));
+    setRefiningAgents(prev => [...new Set([...prev, ...namesToRefine])]);
     setError("");
     setThinking({ agentName: null, executor: null, judgeText: "", refinerText: "" });
 
@@ -164,7 +171,7 @@ export default function Home() {
       const res = await fetch(`${API_BASE}/api/v1/refine-all-stream`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ items }),
+        body: JSON.stringify({ items: itemsToRefine }),
       });
 
       if (!res.ok || !res.body) {
@@ -210,9 +217,6 @@ export default function Home() {
               evaluation: event.evaluation,
               refinement: event.refinement,
             }]);
-          } else if (event.type === "done") {
-            setStage("done");
-            setThinking({ agentName: null, executor: null, judgeText: "", refinerText: "" });
           } else if (event.type === "error") {
             throw new Error(event.detail);
           }
@@ -220,11 +224,27 @@ export default function Home() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
-      setStage("error");
+    } finally {
+      setRefiningAgents(prev => prev.filter(n => !namesToRefine.includes(n)));
+      setThinking({ agentName: null, executor: null, judgeText: "", refinerText: "" });
     }
   }
 
-  const isLoading = stage === "extracting" || stage === "refining";
+  function handleRefineAll() {
+    const unrefined = items.filter((it, i) => {
+      const name = getAgentName(it, i);
+      return !results.find(r => r.agent_name === name) && !refiningAgents.includes(name);
+    });
+    runRefine(unrefined);
+  }
+
+  function handleRefineOne(agentName: string) {
+    const item = items.find((it, i) => getAgentName(it, i) === agentName);
+    if (item) runRefine([item]);
+  }
+
+  const isLoading = stage === "extracting";
+  const isRefiningAny = refiningAgents.length > 0;
 
   return (
     <div className="space-y-10">
@@ -275,68 +295,8 @@ export default function Home() {
         </div>
       )}
 
-      {/* Live thinking panel — shown while agents are running */}
-      {stage === "refining" && (
-        <div className="rounded-2xl border border-slate-200 bg-slate-950 overflow-hidden shadow-lg">
-          {/* Header */}
-          <div className="flex items-center gap-2.5 px-4 py-3 border-b border-slate-800">
-            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span className="text-sm font-semibold text-slate-200">
-              {thinking.agentName ? `Processing: ${thinking.agentName}` : "Starting…"}
-            </span>
-            {thinking.executor && (
-              <span className={`text-xs rounded-full px-2 py-0.5 font-medium border ${
-                thinking.executor === "judge_agent"
-                  ? "bg-indigo-900/60 border-indigo-700 text-indigo-300"
-                  : "bg-amber-900/60 border-amber-700 text-amber-300"
-              }`}>
-                {thinking.executor === "judge_agent" ? "Judge" : "Refiner"}
-              </span>
-            )}
-            <span className="ml-auto text-xs text-slate-500 tabular-nums">
-              {results.length}/{items.length} done
-            </span>
-          </div>
-
-          {/* Judge output */}
-          {thinking.judgeText ? (
-            <div className="border-b border-slate-800">
-              <div className="px-4 pt-3 pb-1 flex items-center gap-2">
-                <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Judge</span>
-              </div>
-              <pre
-                ref={judgeScrollRef}
-                className="px-4 pb-4 whitespace-pre-wrap text-xs text-slate-300 font-mono leading-relaxed max-h-56 overflow-y-auto"
-              >
-                {thinking.judgeText}
-              </pre>
-            </div>
-          ) : (
-            <div className="px-4 py-4 flex items-center gap-2 text-xs text-slate-500">
-              <span className="inline-block h-3 w-3 animate-spin rounded-full border border-slate-600 border-t-slate-400" />
-              Waiting for judge…
-            </div>
-          )}
-
-          {/* Refiner output */}
-          {thinking.refinerText && (
-            <div>
-              <div className="px-4 pt-3 pb-1 flex items-center gap-2">
-                <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Refiner</span>
-              </div>
-              <pre
-                ref={refinerScrollRef}
-                className="px-4 pb-4 whitespace-pre-wrap text-xs text-amber-200/80 font-mono leading-relaxed max-h-56 overflow-y-auto"
-              >
-                {thinking.refinerText}
-              </pre>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Error */}
-      {stage === "error" && (
+      {error && (
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 flex items-start gap-3">
           <svg className="h-4 w-4 mt-0.5 flex-shrink-0 text-red-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -399,54 +359,124 @@ export default function Home() {
         </div>
       )}
 
-      {/* Extracted — show agents + Run Refine button (also visible during refining to show partial results) */}
-      {(stage === "extracted" || stage === "refining" || stage === "done") && items.length > 0 && (
-        <div className="space-y-5">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-2 rounded-full bg-green-50 border border-green-200 px-3 py-1">
-                <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
-                <span className="text-xs font-medium text-green-700">
-                  {items.length} agent{items.length !== 1 ? "s" : ""} found
+      {/* Agents list + stream panels */}
+      {stage === "extracted" && items.length > 0 && (() => {
+        const unrefinedCount = items.filter((it, i) => {
+          const n = getAgentName(it, i);
+          return !results.find(r => r.agent_name === n) && !refiningAgents.includes(n);
+        }).length;
+
+        return (
+          <div className="space-y-4">
+            {/* Header row */}
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2 rounded-full bg-green-50 border border-green-200 px-3 py-1">
+                  <span className="h-1.5 w-1.5 rounded-full bg-green-500" />
+                  <span className="text-xs font-medium text-green-700">
+                    {items.length} agent{items.length !== 1 ? "s" : ""} found
+                  </span>
+                </div>
+                <span className="text-sm text-slate-400">
+                  · {items.reduce((n, it) => n + it.traces.length, 0)} trace{items.reduce((n, it) => n + it.traces.length, 0) !== 1 ? "s" : ""} scraped
                 </span>
               </div>
-              <span className="text-sm text-slate-400">
-                · {items.reduce((n, it) => n + it.traces.length, 0)} trace{items.reduce((n, it) => n + it.traces.length, 0) !== 1 ? "s" : ""} scraped
-              </span>
+              {unrefinedCount > 0 && (
+                <button
+                  onClick={handleRefineAll}
+                  disabled={isRefiningAny}
+                  className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2 text-sm font-medium text-white hover:from-indigo-700 hover:to-violet-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-sm"
+                >
+                  {results.length === 0
+                    ? "Refine All Agents"
+                    : `Refine Remaining (${unrefinedCount})`}
+                </button>
+              )}
             </div>
-            {stage === "extracted" && (
-              <button
-                onClick={handleRefineAll}
-                className="rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 px-5 py-2 text-sm font-medium text-white hover:from-indigo-700 hover:to-violet-700 transition-all shadow-sm"
-              >
-                Run Refine on All Agents
-              </button>
-            )}
-          </div>
 
-          <div className="space-y-3">
-            {items.map((item, i) => {
-              const agentName = item.blueprint.agent.name ?? `Agent ${i + 1}`;
-              const result = results.find((r) => r.agent_name === agentName);
-              const isExpanded = expandedAgent === agentName;
+            {/* Two-column layout */}
+            <div className="flex gap-5 items-start">
+              {/* Left: agent cards */}
+              <div className="flex-1 min-w-0 space-y-3">
+                {items.map((item, i) => {
+                  const name = getAgentName(item, i);
+                  const result = results.find((r) => r.agent_name === name);
+                  const isExpanded = expandedAgent === name;
+                  const isRefining = refiningAgents.includes(name);
 
-              return (
-                <AgentCard
-                  key={agentName}
-                  blueprint={item.blueprint}
-                  traces={item.traces}
-                  agentName={agentName}
-                  result={result ?? null}
-                  isExpanded={isExpanded}
-                  onToggle={() =>
-                    setExpandedAgent(isExpanded ? null : agentName)
-                  }
-                />
-              );
-            })}
+                  return (
+                    <AgentCard
+                      key={name}
+                      blueprint={item.blueprint}
+                      traces={item.traces}
+                      agentName={name}
+                      result={result ?? null}
+                      isExpanded={isExpanded}
+                      isRefining={isRefining}
+                      anyRefining={isRefiningAny}
+                      onToggle={() => setExpandedAgent(isExpanded ? null : name)}
+                      onRefine={result ? null : () => handleRefineOne(name)}
+                    />
+                  );
+                })}
+              </div>
+
+              {/* Right: persistent stream panels */}
+              <div className="w-72 flex-shrink-0 sticky top-6 space-y-3">
+                {/* Active agent indicator */}
+                <div className="flex items-center gap-2 px-1">
+                  {isRefiningAny ? (
+                    <>
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+                      <span className="text-xs text-slate-500 truncate">
+                        {thinking.agentName ? `Processing: ${thinking.agentName}` : "Starting…"}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-xs text-slate-400">Agent output stream</span>
+                  )}
+                </div>
+
+                {/* Judge panel */}
+                <div className="rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden">
+                  <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-800">
+                    <span className="text-xs font-semibold text-indigo-400 uppercase tracking-wider">Judge</span>
+                    {isRefiningAny && thinking.executor === "judge_agent" && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    )}
+                  </div>
+                  <pre
+                    ref={judgeScrollRef}
+                    className="h-52 overflow-y-auto px-4 py-3 whitespace-pre-wrap text-xs font-mono leading-relaxed text-slate-300"
+                  >
+                    {thinking.judgeText || (
+                      <span className="text-slate-600">Waiting for judge…</span>
+                    )}
+                  </pre>
+                </div>
+
+                {/* Refiner panel */}
+                <div className="rounded-2xl bg-slate-950 border border-slate-800 overflow-hidden">
+                  <div className="flex items-center gap-2 px-4 py-2.5 border-b border-slate-800">
+                    <span className="text-xs font-semibold text-amber-400 uppercase tracking-wider">Refiner</span>
+                    {isRefiningAny && thinking.executor === "refiner_agent" && (
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    )}
+                  </div>
+                  <pre
+                    ref={refinerScrollRef}
+                    className="h-52 overflow-y-auto px-4 py-3 whitespace-pre-wrap text-xs font-mono leading-relaxed text-amber-200/80"
+                  >
+                    {thinking.refinerText || (
+                      <span className="text-slate-600">Waiting for refiner…</span>
+                    )}
+                  </pre>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
@@ -457,14 +487,20 @@ function AgentCard({
   agentName,
   result,
   isExpanded,
+  isRefining,
+  anyRefining,
   onToggle,
+  onRefine,
 }: {
   blueprint: Blueprint;
   traces: Trace[];
   agentName: string;
   result: AgentRefinementResult | null;
   isExpanded: boolean;
+  isRefining: boolean;
+  anyRefining: boolean;
   onToggle: () => void;
+  onRefine: (() => void) | null;
 }) {
   const score = result?.evaluation.overall_score;
   const scoreColor =
@@ -479,9 +515,9 @@ function AgentCard({
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white shadow-sm overflow-hidden hover:shadow-md transition-shadow">
       {/* Card header — always visible */}
-      <button
+      <div
         onClick={onToggle}
-        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50/70 transition-colors"
+        className="w-full flex items-center justify-between px-5 py-4 text-left hover:bg-slate-50/70 transition-colors cursor-pointer"
       >
         <div className="flex items-center gap-3 min-w-0">
           <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-indigo-100 to-violet-100 flex items-center justify-center flex-shrink-0">
@@ -527,6 +563,28 @@ function AgentCard({
               Passed
             </span>
           )}
+          {/* Individual refine button — only shown when no result yet */}
+          {!result && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRefine?.(); }}
+              disabled={isRefining || anyRefining}
+              className="flex items-center gap-1.5 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+            >
+              {isRefining ? (
+                <>
+                  <span className="inline-block h-3 w-3 animate-spin rounded-full border border-indigo-300 border-t-indigo-600" />
+                  Refining…
+                </>
+              ) : (
+                <>
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                  </svg>
+                  Refine
+                </>
+              )}
+            </button>
+          )}
           <svg
             className={`h-4 w-4 text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`}
             fill="none"
@@ -536,7 +594,7 @@ function AgentCard({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
           </svg>
         </div>
-      </button>
+      </div>
 
       {/* Expanded content */}
       {isExpanded && (
