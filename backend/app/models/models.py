@@ -185,7 +185,7 @@ class RefactorRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     github_url: str | None = None
-    repo_files: Dict[str, str] | List[Dict[str, Any]] | None = None
+    repo_files: Dict[str, str] | List[Dict[str, Any]] | str | None = None
     raw_payload: Dict[str, Any] | str | None = None
 
     blueprint: Dict[str, Any] | str | None = None

@@ -25,6 +25,21 @@ from app.services.refactor_runtime import (
 router = APIRouter()
 
 
+def _unwrap_request_envelope(payload: dict, envelope_keys: list[str]) -> dict:
+    merged = dict(payload)
+    for key in envelope_keys:
+        nested = merged.get(key)
+        if isinstance(nested, dict):
+            unwrapped = dict(nested)
+            for outer_key, outer_val in merged.items():
+                if outer_key == key:
+                    continue
+                # Keep explicit top-level values only when nested does not define them.
+                unwrapped.setdefault(outer_key, outer_val)
+            return unwrapped
+    return merged
+
+
 @router.post(
     "/evaluate",
     response_model=EvaluationResponse,
@@ -149,8 +164,12 @@ async def refactor(request: RefactorRequest) -> RefactorResponse:
     Accepts partial or loosely formatted payloads and normalizes them into
     AgentBlueprint + TraceLog internally before running evaluation/refinement.
     """
+    payload = _unwrap_request_envelope(
+        request.model_dump(),
+        ["RefactorRequest", "refactorRequest", "request"],
+    )
     try:
-        blueprint, traces, notes = await normalize_refactor_payload(request.model_dump())
+        blueprint, traces, notes = await normalize_refactor_payload(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid refactor payload: {exc}") from exc
     except Exception as exc:
@@ -179,8 +198,12 @@ async def refactor_run(request: RefactorRunRequest) -> RefactorRunResponse:
     3) Builds a ground-truth precheck report from expected_output/expected_behavior.
     4) Feeds augmented blueprint + traces into judge/refiner workflow.
     """
+    payload = _unwrap_request_envelope(
+        request.model_dump(),
+        ["RefactorRunRequest", "refactorRunRequest", "request"],
+    )
     try:
-        blueprint, normalized_traces, notes = await normalize_refactor_payload(request.model_dump())
+        blueprint, normalized_traces, notes = await normalize_refactor_payload(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid refactor-run payload: {exc}") from exc
     except Exception as exc:

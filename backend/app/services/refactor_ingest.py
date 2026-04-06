@@ -33,6 +33,12 @@ def _as_list(value: Any) -> List[Any]:
 
 
 def _coerce_repo_files(repo_files: Any) -> Dict[str, str]:
+    if isinstance(repo_files, str) and repo_files.strip():
+        try:
+            parsed = json.loads(repo_files)
+            return _coerce_repo_files(parsed)
+        except Exception:
+            return {}
     if isinstance(repo_files, dict):
         return {str(path): str(content) for path, content in repo_files.items()}
     if isinstance(repo_files, list):
