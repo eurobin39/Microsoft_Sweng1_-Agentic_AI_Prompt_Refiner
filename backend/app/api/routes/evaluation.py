@@ -1,5 +1,5 @@
 import json
-from typing import AsyncGenerator, List
+from typing import Any, AsyncGenerator, List
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
@@ -38,6 +38,124 @@ def _unwrap_request_envelope(payload: dict, envelope_keys: list[str]) -> dict:
                 unwrapped.setdefault(outer_key, outer_val)
             return unwrapped
     return merged
+
+
+def _coerce_json_string_to_dict(payload: Any, field_name: str, notes: List[str]) -> dict[str, Any]:
+    if payload is None:
+        return {}
+    if isinstance(payload, dict):
+        return payload
+    if not isinstance(payload, str):
+        return {"observed_output": str(payload)}
+
+    text = payload.strip()
+    if not text:
+        return {}
+    if text in {"{}", "''", '""'}:
+        return {}
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        notes.append(f"{field_name} is not valid JSON; using safe fallback object so normalization can continue.")
+        return {"observed_output": text}
+    if isinstance(parsed, dict):
+        return parsed
+    if isinstance(parsed, list):
+        return {"items": parsed}
+    if parsed is None:
+        return {}
+    return {"value": parsed}
+
+
+def _coerce_json_string_to_list(payload: Any, field_name: str, notes: List[str]) -> list[Any]:
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, tuple):
+        return list(payload)
+    if not isinstance(payload, str):
+        return [payload]
+
+    text = payload.strip()
+    if not text:
+        return []
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        notes.append(f"{field_name} is not valid JSON; treating as single-item text input list.")
+        return [text]
+    if isinstance(parsed, list):
+        return parsed
+    if isinstance(parsed, dict):
+        if isinstance(parsed.get("items"), list):
+            return parsed["items"]
+        notes.append(f"{field_name} expected a list; wrapping dict into single-item list.")
+        return [parsed]
+    if parsed is None:
+        return []
+    return [str(parsed)]
+
+
+def _sanitize_refactor_request_payload(payload: dict, notes: List[str]) -> dict[str, Any]:
+    if not isinstance(payload, dict):
+        notes.append("Request payload was not an object; using empty fallback payload.")
+        return {}
+
+    normalized = dict(payload)
+
+    candidate = normalized.get("payload")
+    if isinstance(candidate, dict):
+        merged = dict(candidate)
+        for key, value in normalized.items():
+            if key != "payload":
+                merged.setdefault(key, value)
+        normalized = merged
+        notes.append("Applied top-level `payload` object wrapper.")
+    elif isinstance(candidate, str):
+        wrapped = _coerce_json_string_to_dict(candidate, "payload", notes)
+        if wrapped:
+            merged = dict(wrapped)
+            for key, value in normalized.items():
+                if key != "payload":
+                    merged.setdefault(key, value)
+            normalized = merged
+            notes.append("Applied top-level `payload` string wrapper.")
+        else:
+            normalized["payload"] = candidate
+
+    if isinstance(normalized.get("raw_payload"), (str, dict)):
+        normalized["raw_payload"] = _coerce_json_string_to_dict(
+            normalized.get("raw_payload"),
+            "raw_payload",
+            notes,
+        )
+    if isinstance(normalized.get("blueprint"), (str, dict)):
+        normalized["blueprint"] = _coerce_json_string_to_dict(
+            normalized.get("blueprint"),
+            "blueprint",
+            notes,
+        )
+    if isinstance(normalized.get("traces"), (str, list, dict)):
+        normalized["traces"] = _coerce_json_string_to_list(
+            normalized.get("traces"),
+            "traces",
+            notes,
+        )
+    if isinstance(normalized.get("test_cases"), (str, list, dict)):
+        normalized["test_cases"] = _coerce_json_string_to_list(
+            normalized.get("test_cases"),
+            "test_cases",
+            notes,
+        )
+    if isinstance(normalized.get("test_inputs"), (str, list, dict)):
+        normalized["test_inputs"] = _coerce_json_string_to_list(
+            normalized.get("test_inputs"),
+            "test_inputs",
+            notes,
+        )
+
+    return normalized
 
 
 @router.post(
@@ -128,7 +246,7 @@ async def evaluate(request: EvaluationRequest) -> EvaluationResponse:
 
 
 @router.post(
-    "/refactor",
+    "/Optimize",
     response_model=RefactorResponse,
     openapi_extra={
         "requestBody": {
@@ -158,27 +276,32 @@ async def evaluate(request: EvaluationRequest) -> EvaluationResponse:
         }
     },
 )
-async def refactor(request: RefactorRequest) -> RefactorResponse:
+async def optimize(request: RefactorRequest) -> RefactorResponse:
     """
     Flexible endpoint for GenAI clients.
     Accepts partial or loosely formatted payloads and normalizes them into
     AgentBlueprint + TraceLog internally before running evaluation/refinement.
     """
-    payload = _unwrap_request_envelope(
-        request.model_dump(),
-        ["RefactorRequest", "refactorRequest", "request"],
+    normalize_notes: List[str] = []
+    payload = _sanitize_refactor_request_payload(
+        _unwrap_request_envelope(
+            request.model_dump(),
+            ["RefactorRequest", "refactorRequest", "request", "payload"],
+        ),
+        normalize_notes,
     )
     try:
         blueprint, traces, notes = await normalize_refactor_payload(payload)
+        notes = normalize_notes + notes
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid refactor payload: {exc}") from exc
+        raise HTTPException(status_code=400, detail=f"Invalid Optimize payload: {exc}") from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to normalize refactor payload: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Failed to normalize Optimize payload: {exc}") from exc
 
     try:
         result = await run_evaluation(blueprint, traces)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Refactor evaluation failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Optimize evaluation failed: {exc}") from exc
 
     return RefactorResponse(
         evaluation=result.evaluation,
@@ -189,8 +312,8 @@ async def refactor(request: RefactorRequest) -> RefactorResponse:
     )
 
 
-@router.post("/refactor-run", response_model=RefactorRunResponse)
-async def refactor_run(request: RefactorRunRequest) -> RefactorRunResponse:
+@router.post("/Optimize-run", response_model=RefactorRunResponse)
+async def optimize_run(request: RefactorRunRequest) -> RefactorRunResponse:
     """
     Runtime execution endpoint:
     1) Normalizes flexible input into blueprint/traces.
@@ -198,16 +321,21 @@ async def refactor_run(request: RefactorRunRequest) -> RefactorRunResponse:
     3) Builds a ground-truth precheck report from expected_output/expected_behavior.
     4) Feeds augmented blueprint + traces into judge/refiner workflow.
     """
-    payload = _unwrap_request_envelope(
-        request.model_dump(),
-        ["RefactorRunRequest", "refactorRunRequest", "request"],
+    normalize_notes: List[str] = []
+    payload = _sanitize_refactor_request_payload(
+        _unwrap_request_envelope(
+            request.model_dump(),
+            ["RefactorRunRequest", "refactorRunRequest", "request", "payload"],
+        ),
+        normalize_notes,
     )
     try:
         blueprint, normalized_traces, notes = await normalize_refactor_payload(payload)
+        notes = normalize_notes + notes
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=f"Invalid refactor-run payload: {exc}") from exc
+        raise HTTPException(status_code=400, detail=f"Invalid Optimize-run payload: {exc}") from exc
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Failed to normalize refactor-run payload: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Failed to normalize Optimize-run payload: {exc}") from exc
 
     chat_client = get_chat_client()
     try:
@@ -231,7 +359,7 @@ async def refactor_run(request: RefactorRunRequest) -> RefactorRunResponse:
     try:
         result = await run_evaluation(blueprint_for_judge, traces_for_judge)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Refactor-run evaluation failed: {exc}") from exc
+        raise HTTPException(status_code=500, detail=f"Optimize-run evaluation failed: {exc}") from exc
 
     return RefactorRunResponse(
         evaluation=result.evaluation,

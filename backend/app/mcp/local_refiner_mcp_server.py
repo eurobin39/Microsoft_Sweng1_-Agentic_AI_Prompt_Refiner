@@ -19,13 +19,31 @@ def _base_url() -> str:
 def _json_load_if_needed(payload: str | Dict[str, Any]) -> Dict[str, Any]:
     if isinstance(payload, dict):
         return payload
+    if payload is None:
+        return {}
+    if not isinstance(payload, str):
+        return {"observed_output": str(payload)}
     text = (payload or "").strip()
     if not text:
         return {}
-    data = json.loads(text)
-    if not isinstance(data, dict):
-        raise ValueError("payload must be a JSON object")
-    return data
+    if text in {'""', "''", "null", "None"}:
+        return {}
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        # Gracefully accept accidental JSON strings and plain text by wrapping
+        # into a safe fallback payload instead of failing the tool call.
+        return {"observed_output": text} if text else {}
+
+    if isinstance(data, dict):
+        return data
+    if data in (None, "", []):
+        return {}
+    if isinstance(data, list):
+        return {"test_inputs": data}
+    if isinstance(data, str):
+        return {"observed_output": data} if data.strip() else {}
+    return {"observed_output": str(data)}
 
 
 def _post_json(path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -46,24 +64,24 @@ def health() -> Dict[str, Any]:
         return response.json()
 
 
-@mcp.tool()
-def refactor(payload: str) -> Dict[str, Any]:
+@mcp.tool(name="Optimize")
+def optimize(payload: str) -> Dict[str, Any]:
     """
     Flexible prompt refinement.
-    `payload` should be a JSON object string for POST /api/v1/refactor.
+    `payload` should be a JSON object string for POST /api/v1/Optimize.
     """
     data = _json_load_if_needed(payload)
-    return _post_json("/api/v1/refactor", data)
+    return _post_json("/api/v1/Optimize", data)
 
 
-@mcp.tool()
-def refactor_run(payload: str) -> Dict[str, Any]:
+@mcp.tool(name="Optimize-run")
+def optimize_run(payload: str) -> Dict[str, Any]:
     """
     Runtime execution + trace generation + judge/refiner.
-    `payload` should be a JSON object string for POST /api/v1/refactor-run.
+    `payload` should be a JSON object string for POST /api/v1/Optimize-run.
     """
     data = _json_load_if_needed(payload)
-    return _post_json("/api/v1/refactor-run", data)
+    return _post_json("/api/v1/Optimize-run", data)
 
 
 @mcp.tool()
@@ -88,4 +106,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
