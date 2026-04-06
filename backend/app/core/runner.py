@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 
 from agent_framework import (
     AgentResponseUpdate,
@@ -8,32 +9,66 @@ from agent_framework import (
     ExecutorInvokedEvent,
 )
 from agent_framework.azure import AzureOpenAIChatClient
+from agent_framework.exceptions import ServiceInitializationError
 from azure.identity import AzureCliCredential
-from dotenv import load_dotenv
+from dotenv import find_dotenv, load_dotenv
 
 from app.models.models import AgentBlueprint, EvaluationResponse, EvaluationResult, RefinementResult
 from app.models.trace_logs import TraceLog
 from .workflow import build_refinement_workflow
 
-load_dotenv()
+
+def _load_env_if_needed() -> None:
+    # Avoid repeated filesystem work once any key is present.
+    if os.getenv("AZURE_OPENAI_ENDPOINT") or os.getenv("AZURE_OPENAI_CHAT_ENDPOINT"):
+        return
+
+    repo_root_env = Path(__file__).resolve().parents[2] / ".env"
+    backend_env = Path(__file__).resolve().parents[1] / ".env"
+
+    if repo_root_env.exists():
+        load_dotenv(repo_root_env, override=False)
+        return
+    if backend_env.exists():
+        load_dotenv(backend_env, override=False)
+        return
+
+    try:
+        discovered = find_dotenv(usecwd=True)
+    except Exception:
+        discovered = ""
+    if discovered:
+        load_dotenv(discovered, override=False)
 
 
 def get_chat_client() -> AzureOpenAIChatClient:
-    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "")
-    api_key = os.getenv("AZURE_OPENAI_API_KEY", "")
-    deployment = os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
+    _load_env_if_needed()
+    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT", "") or os.getenv("AZURE_OPENAI_CHAT_ENDPOINT", "")
+    api_key = os.getenv("AZURE_OPENAI_API_KEY", "") or os.getenv("AZURE_OPENAI_CHAT_API_KEY", "")
+    deployment = (
+        os.getenv("AZURE_OPENAI_DEPLOYMENT", "")
+        or os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT_NAME", "")
+    )
 
-    if api_key:
+    try:
+        if api_key:
+            return AzureOpenAIChatClient(
+                api_key=api_key,
+                endpoint=endpoint,
+                deployment_name=deployment,
+            )
         return AzureOpenAIChatClient(
-            api_key=api_key,
+            credential=AzureCliCredential(),
             endpoint=endpoint,
             deployment_name=deployment,
         )
-    return AzureOpenAIChatClient(
-        credential=AzureCliCredential(),
-        endpoint=endpoint,
-        deployment_name=deployment,
-    )
+    except ServiceInitializationError as exc:
+        raise RuntimeError(
+            "Azure OpenAI client initialization failed. Set required env vars: "
+            "AZURE_OPENAI_ENDPOINT and one of "
+            "{AZURE_OPENAI_DEPLOYMENT, AZURE_OPENAI_CHAT_DEPLOYMENT_NAME}. "
+            "Also set AZURE_OPENAI_API_KEY (or use Azure CLI login)."
+        ) from exc
 
 
 def _extract_json(text: str) -> dict:

@@ -3,8 +3,35 @@ FastAPI Application Entry Point
 TODO: Configure FastAPI app, add middleware, and include routers
 """
 
+from pathlib import Path
+
 from dotenv import find_dotenv, load_dotenv
-load_dotenv(find_dotenv(usecwd=False))
+
+
+def _load_env() -> None:
+    """
+    Load .env robustly regardless of launch cwd.
+    Prefer repo-root .env, then backend/.env, then dotenv discovery fallback.
+    """
+    repo_root_env = Path(__file__).resolve().parents[2] / ".env"
+    backend_env = Path(__file__).resolve().parents[1] / ".env"
+
+    if repo_root_env.exists():
+        load_dotenv(repo_root_env, override=False)
+        return
+    if backend_env.exists():
+        load_dotenv(backend_env, override=False)
+        return
+
+    try:
+        discovered = find_dotenv(usecwd=True)
+    except Exception:
+        discovered = ""
+    if discovered:
+        load_dotenv(discovered, override=False)
+
+
+_load_env()
 
 
 from fastapi import FastAPI

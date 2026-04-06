@@ -177,6 +177,33 @@ class EvaluationRequest(BaseModel):
     traces: list[TraceLog] #log model
 
 
+class RefactorRequest(BaseModel):
+    """
+    Flexible ingestion contract for GenAI clients.
+    Most fields are optional and extra keys are allowed.
+    """
+    model_config = ConfigDict(extra="allow")
+
+    github_url: str | None = None
+    repo_files: Dict[str, str] | List[Dict[str, Any]] | None = None
+    raw_payload: Dict[str, Any] | str | None = None
+
+    blueprint: Dict[str, Any] | str | None = None
+    traces: List[Dict[str, Any]] | Dict[str, Any] | str | None = None
+
+    # Minimal fallback fields when blueprint/traces are unavailable.
+    agent_name: str | None = None
+    system_prompt: str | None = None
+    test_cases: List[Dict[str, Any]] | str | None = None
+    test_inputs: List[str] | str | None = None
+    observed_output: str | None = None
+
+    include_normalized_payload: bool = Field(
+        True,
+        description="When true, returns normalized blueprint/traces preview in response."
+    )
+
+
 class TestCaseResult(BaseModel):
     """ Result for a single test case evaluation """
     test_case_description: str = Field(..., description="Description of the scenario being tested")
@@ -198,6 +225,49 @@ class EvaluationResponse(BaseModel):
         and optionally the refiner output when overall_score < 0.7. """
     evaluation: EvaluationResult = Field(..., description="Judge evaluation result")
     refinement: RefinementResult | None = Field(None, description="Refiner output (present when overall_score < 0.7)")
+
+
+class RefactorResponse(BaseModel):
+    evaluation: EvaluationResult = Field(..., description="Judge evaluation result")
+    refinement: RefinementResult | None = Field(None, description="Refiner output if score is below threshold")
+    normalized_blueprint: AgentBlueprint | None = Field(
+        None,
+        description="Server-normalized blueprint used for evaluation."
+    )
+    normalized_traces_count: int = Field(..., ge=0, description="Number of traces used after normalization")
+    normalization_notes: List[str] = Field(default_factory=list, description="Normalization decisions for debugging")
+
+
+class RefactorRunRequest(RefactorRequest):
+    use_existing_traces: bool = Field(
+        False,
+        description="If true, append normalized incoming traces to generated runtime traces."
+    )
+    max_test_cases: int | None = Field(
+        None,
+        ge=1,
+        description="Optional limit for number of blueprint test cases to execute at runtime."
+    )
+    include_generated_traces: bool = Field(
+        True,
+        description="When true, returns generated runtime traces in response."
+    )
+
+
+class RefactorRunResponse(BaseModel):
+    evaluation: EvaluationResult = Field(..., description="Judge evaluation result")
+    refinement: RefinementResult | None = Field(None, description="Refiner output if score is below threshold")
+    normalized_blueprint: AgentBlueprint | None = Field(
+        None,
+        description="Normalized blueprint before runtime execution."
+    )
+    generated_traces: List[TraceLog] = Field(default_factory=list, description="Runtime-generated traces")
+    traces_used_count: int = Field(..., ge=0, description="Number of traces used for judge/refiner")
+    ground_truth_report: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Per-test precheck report built from runtime traces vs expected behavior/output."
+    )
+    normalization_notes: List[str] = Field(default_factory=list, description="Normalization and runtime notes")
 
 
 class AgentRefinementResult(BaseModel):
