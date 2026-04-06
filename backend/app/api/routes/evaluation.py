@@ -9,8 +9,18 @@ from app.models.models import (
     BatchRefineRequest,
     EvaluationRequest,
     EvaluationResponse,
+    RefactorRequest,
+    RefactorResponse,
+    RefactorRunRequest,
+    RefactorRunResponse,
 )
 from app.core.runner import get_chat_client, run_evaluation, run_evaluation_stream
+from app.services.refactor_ingest import normalize_refactor_payload
+from app.services.refactor_runtime import (
+    apply_ground_truth_report_to_blueprint,
+    build_ground_truth_assessment,
+    run_blueprint_in_runtime,
+)
 
 router = APIRouter()
 
@@ -100,6 +110,115 @@ async def evaluate(request: EvaluationRequest) -> EvaluationResponse:
         return await run_evaluation(request.blueprint, request.traces)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post(
+    "/refactor",
+    response_model=RefactorResponse,
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "examples": {
+                        "from_genai_repo_snippets": {
+                            "summary": "Flexible request with repo snippets only",
+                            "value": {
+                                "repo_files": [
+                                    {"path": "README.md", "content": "# My Agent\n..."},
+                                    {"path": "agent.py", "content": "SYSTEM_PROMPT='You are ...'"}
+                                ],
+                                "test_inputs": ["User asks for a summary"],
+                                "agent_name": "repo_agent",
+                            },
+                        },
+                        "from_existing_payload": {
+                            "summary": "Single raw payload string from another GenAI tool",
+                            "value": {
+                                "raw_payload": "{\"system_prompt\":\"You are a coding assistant\",\"test_inputs\":[\"Refactor this file\"],\"observed_output\":\"Done\"}"
+                            },
+                        },
+                    }
+                }
+            }
+        }
+    },
+)
+async def refactor(request: RefactorRequest) -> RefactorResponse:
+    """
+    Flexible endpoint for GenAI clients.
+    Accepts partial or loosely formatted payloads and normalizes them into
+    AgentBlueprint + TraceLog internally before running evaluation/refinement.
+    """
+    try:
+        blueprint, traces, notes = await normalize_refactor_payload(request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid refactor payload: {exc}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to normalize refactor payload: {exc}") from exc
+
+    try:
+        result = await run_evaluation(blueprint, traces)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Refactor evaluation failed: {exc}") from exc
+
+    return RefactorResponse(
+        evaluation=result.evaluation,
+        refinement=result.refinement,
+        normalized_blueprint=blueprint if request.include_normalized_payload else None,
+        normalized_traces_count=len(traces),
+        normalization_notes=notes,
+    )
+
+
+@router.post("/refactor-run", response_model=RefactorRunResponse)
+async def refactor_run(request: RefactorRunRequest) -> RefactorRunResponse:
+    """
+    Runtime execution endpoint:
+    1) Normalizes flexible input into blueprint/traces.
+    2) Executes blueprint test cases to generate fresh runtime traces.
+    3) Builds a ground-truth precheck report from expected_output/expected_behavior.
+    4) Feeds augmented blueprint + traces into judge/refiner workflow.
+    """
+    try:
+        blueprint, normalized_traces, notes = await normalize_refactor_payload(request.model_dump())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid refactor-run payload: {exc}") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Failed to normalize refactor-run payload: {exc}") from exc
+
+    chat_client = get_chat_client()
+    try:
+        generated_traces, runtime_notes = await run_blueprint_in_runtime(
+            blueprint,
+            chat_client,
+            max_test_cases=request.max_test_cases,
+        )
+        notes.extend(runtime_notes)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Runtime execution failed: {exc}") from exc
+
+    ground_truth_report = build_ground_truth_assessment(blueprint, generated_traces)
+    blueprint_for_judge = apply_ground_truth_report_to_blueprint(blueprint, ground_truth_report)
+
+    traces_for_judge = list(generated_traces)
+    if request.use_existing_traces:
+        traces_for_judge.extend(normalized_traces)
+        notes.append(f"Appended {len(normalized_traces)} normalized trace(s) to generated runtime traces.")
+
+    try:
+        result = await run_evaluation(blueprint_for_judge, traces_for_judge)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Refactor-run evaluation failed: {exc}") from exc
+
+    return RefactorRunResponse(
+        evaluation=result.evaluation,
+        refinement=result.refinement,
+        normalized_blueprint=blueprint if request.include_normalized_payload else None,
+        generated_traces=generated_traces if request.include_generated_traces else [],
+        traces_used_count=len(traces_for_judge),
+        ground_truth_report=ground_truth_report,
+        normalization_notes=notes,
+    )
 
 
 @router.post("/refine-all-stream")
