@@ -337,37 +337,74 @@ async def optimize_run(request: RefactorRunRequest) -> RefactorRunResponse:
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Failed to normalize Optimize-run payload: {exc}") from exc
 
+    max_iterations = 3
+    target_score = 0.9
     chat_client = get_chat_client()
-    try:
-        generated_traces, runtime_notes = await run_blueprint_in_runtime(
-            blueprint,
-            chat_client,
-            max_test_cases=request.max_test_cases,
-        )
-        notes.extend(runtime_notes)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Runtime execution failed: {exc}") from exc
+    current_blueprint = blueprint
+    last_generated_traces = []
+    last_ground_truth_report: list[dict[str, Any]] = []
+    last_traces_for_judge_count = 0
+    result = None
 
-    ground_truth_report = build_ground_truth_assessment(blueprint, generated_traces)
-    blueprint_for_judge = apply_ground_truth_report_to_blueprint(blueprint, ground_truth_report)
+    for iteration in range(1, max_iterations + 1):
+        try:
+            generated_traces, runtime_notes = await run_blueprint_in_runtime(
+                current_blueprint,
+                chat_client,
+                max_test_cases=request.max_test_cases,
+            )
+            notes.extend([f"[iteration {iteration}] {note}" for note in runtime_notes])
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Runtime execution failed: {exc}") from exc
 
-    traces_for_judge = list(generated_traces)
-    if request.use_existing_traces:
-        traces_for_judge.extend(normalized_traces)
-        notes.append(f"Appended {len(normalized_traces)} normalized trace(s) to generated runtime traces.")
+        ground_truth_report = build_ground_truth_assessment(current_blueprint, generated_traces)
+        blueprint_for_judge = apply_ground_truth_report_to_blueprint(current_blueprint, ground_truth_report)
 
-    try:
-        result = await run_evaluation(blueprint_for_judge, traces_for_judge)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Optimize-run evaluation failed: {exc}") from exc
+        traces_for_judge = list(generated_traces)
+        if request.use_existing_traces:
+            traces_for_judge.extend(normalized_traces)
+            notes.append(
+                f"[iteration {iteration}] Appended {len(normalized_traces)} normalized trace(s) to generated runtime traces."
+            )
+
+        try:
+            result = await run_evaluation(blueprint_for_judge, traces_for_judge)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Optimize-run evaluation failed: {exc}") from exc
+
+        last_generated_traces = generated_traces
+        last_ground_truth_report = ground_truth_report
+        last_traces_for_judge_count = len(traces_for_judge)
+        score = result.evaluation.overall_score
+        notes.append(f"[iteration {iteration}] Evaluation overall_score={score:.4f} (target >= {target_score:.2f}).")
+
+        if score >= target_score:
+            notes.append(f"Stopped after iteration {iteration}: target score reached.")
+            break
+
+        if iteration == max_iterations:
+            notes.append(f"Stopped after iteration {iteration}: reached max iterations.")
+            break
+
+        if not result.refinement or not result.refinement.refined_prompt.strip():
+            notes.append(f"Stopped after iteration {iteration}: no refined_prompt available for next rerun.")
+            break
+
+        next_blueprint_raw = current_blueprint.model_dump(mode="json")
+        next_blueprint_raw["agent"]["system_prompt"] = result.refinement.refined_prompt
+        current_blueprint = type(current_blueprint).model_validate(next_blueprint_raw)
+        notes.append(f"[iteration {iteration}] Applied refined_prompt and reran runtime execution.")
+
+    if result is None:
+        raise HTTPException(status_code=500, detail="Optimize-run failed to produce an evaluation result.")
 
     return RefactorRunResponse(
         evaluation=result.evaluation,
         refinement=result.refinement,
-        normalized_blueprint=blueprint if request.include_normalized_payload else None,
-        generated_traces=generated_traces if request.include_generated_traces else [],
-        traces_used_count=len(traces_for_judge),
-        ground_truth_report=ground_truth_report,
+        normalized_blueprint=current_blueprint if request.include_normalized_payload else None,
+        generated_traces=last_generated_traces if request.include_generated_traces else [],
+        traces_used_count=last_traces_for_judge_count,
+        ground_truth_report=last_ground_truth_report,
         normalization_notes=notes,
     )
 
