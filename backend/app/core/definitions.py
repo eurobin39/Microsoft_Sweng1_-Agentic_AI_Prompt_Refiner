@@ -5,6 +5,7 @@ from typing import Any
 from agent_framework import ChatAgent, tool
 from agent_framework.azure import AzureOpenAIChatClient
 
+from app.models.models import EvaluationResult, RefinementResult
 from app.services.judge_tools import save_evaluation_result
 from app.services.refiner_tools import save_refinement_result
 
@@ -280,6 +281,9 @@ JUDGE_SYSTEM_PROMPT = """You are an impartial AI QA Judge. You are evaluating an
 5. Call validate_handoffs to verify agents handed off to each other correctly.
 6. Use the results from all tools to reason about each test case and produce your score.
 7. Your final output MUST respond ONLY with valid JSON in the EvaluationResult structure below. Do not include markdown fences (like ```json) or any conversational text.
+8. You MUST include every field in the schema: overall_score, test_results, and summary.
+9. For each test case, include exactly one test_results item with test_case_description, score, passed, reasoning, and issues.
+10. If evidence is incomplete, choose conservative values instead of omitting fields. Never leave overall_score out.
 
 {
     "overall_score": <float 0.0 to 1.0>,
@@ -345,6 +349,10 @@ def create_judge_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
         name="judge_agent",
         instructions=JUDGE_SYSTEM_PROMPT,
         chat_client=chat_client,
+        default_options={
+            "response_format": EvaluationResult,
+            "temperature": 0.0,
+        },
         tools=[
             store_evaluation_result,
             extract_agent_prompts,
@@ -361,6 +369,10 @@ def create_refiner_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
         name="refiner_agent",
         instructions=REFINER_SYSTEM_PROMPT,
         chat_client=chat_client,
+        default_options={
+            "response_format": RefinementResult,
+            "temperature": 0.0,
+        },
         tools=[
             store_refinement_result,
             diff_prompts,
