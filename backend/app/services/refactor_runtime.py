@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import difflib
 import json
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
@@ -34,8 +35,23 @@ def _safe_serialise(obj: Any) -> Any:
         return str(obj)
 
 
+def _sanitize_openai_name(name: str, fallback: str) -> str:
+    candidate = re.sub(r"[\s<|\\/>]+", "_", (name or "").strip())
+    candidate = re.sub(r"_+", "_", candidate).strip("_")
+    if not candidate:
+        candidate = fallback
+    return candidate
+
+
 class RuntimeWorkflowTracer:
-    def __init__(self, user_input: str, agent_name: str, instructions: str, tools_available: List[str]) -> None:
+    def __init__(
+        self,
+        user_input: str,
+        agent_name: str,
+        instructions: str,
+        tools_available: List[str],
+        tool_name_aliases: Dict[str, str] | None = None,
+    ) -> None:
         self.trace: Dict[str, Any] = {
             "timestamp": datetime.now().isoformat(),
             "mode": "runtime",
@@ -49,6 +65,7 @@ class RuntimeWorkflowTracer:
         self._default_agent_name = agent_name
         self._instructions = instructions
         self._tools_available = tools_available
+        self._tool_name_aliases = tool_name_aliases or {}
         self._current_agent: str | None = None
         self._response_buffers: Dict[str, List[str]] = {}
         self._agent_start_times: Dict[str, datetime] = {}
@@ -113,8 +130,9 @@ class RuntimeWorkflowTracer:
                         dedup_key = f"{executor_id}:{call_id or name}"
                         if dedup_key not in self._seen_tool_calls:
                             self._seen_tool_calls.add(dedup_key)
+                            recorded_name = self._tool_name_aliases.get(name, name)
                             self.trace["agents"][executor_id]["tool_calls"].append(
-                                {"tool": name, "arguments": _safe_serialise(arguments), "result": None}
+                                {"tool": recorded_name, "arguments": _safe_serialise(arguments), "result": None}
                             )
                     if result is not None:
                         for tc in reversed(self.trace["agents"][executor_id]["tool_calls"]):
@@ -134,7 +152,9 @@ class RuntimeWorkflowTracer:
 
 
 def _make_mock_tool(tool_name: str, tool_description: str):
-    @tool(name=tool_name, description=tool_description or f"Mock tool for {tool_name}")
+    safe_tool_name = _sanitize_openai_name(tool_name, "mock_tool")
+
+    @tool(name=safe_tool_name, description=tool_description or f"Mock tool for {tool_name}")
     def _mock_tool(**kwargs: Any) -> str:
         return json.dumps(
             {
@@ -257,7 +277,15 @@ async def run_blueprint_in_runtime(
     max_test_cases: int | None = None,
 ) -> Tuple[List[TraceLog], List[str]]:
     notes: List[str] = []
-    tool_defs = [_make_mock_tool(t.name, t.description) for t in blueprint.agent.tools]
+    tool_defs = []
+    tool_name_aliases: Dict[str, str] = {}
+    for tool_def in blueprint.agent.tools:
+        mock_tool = _make_mock_tool(tool_def.name, tool_def.description)
+        tool_defs.append(mock_tool)
+        safe_tool_name = getattr(mock_tool, "name", tool_def.name)
+        tool_name_aliases[safe_tool_name] = tool_def.name
+        if safe_tool_name != tool_def.name:
+            notes.append(f"Sanitized tool name '{tool_def.name}' to '{safe_tool_name}' for OpenAI compatibility.")
     if tool_defs:
         notes.append(f"Registered {len(tool_defs)} mock tool(s) for runtime execution.")
     else:
@@ -267,10 +295,14 @@ async def run_blueprint_in_runtime(
     selected_cases = blueprint.test_cases[:limit]
     traces: List[TraceLog] = []
 
+    original_agent_name = blueprint.agent.name or "runtime_agent"
+    safe_agent_name = _sanitize_openai_name(original_agent_name, "runtime_agent")
+    if safe_agent_name != original_agent_name:
+        notes.append(f"Sanitized agent name '{original_agent_name}' to '{safe_agent_name}' for OpenAI compatibility.")
+
     for idx, case in enumerate(selected_cases):
-        agent_name = blueprint.agent.name or "runtime_agent"
         runtime_agent = ChatAgent(
-            name=agent_name,
+            name=safe_agent_name,
             instructions=blueprint.agent.system_prompt,
             chat_client=chat_client,
             tools=tool_defs,
@@ -278,9 +310,10 @@ async def run_blueprint_in_runtime(
         workflow = WorkflowBuilder().set_start_executor(runtime_agent).build()
         tracer = RuntimeWorkflowTracer(
             user_input=case.input,
-            agent_name=agent_name,
+            agent_name=safe_agent_name,
             instructions=blueprint.agent.system_prompt,
             tools_available=[t.name for t in blueprint.agent.tools],
+            tool_name_aliases=tool_name_aliases,
         )
 
         final_output = ""
