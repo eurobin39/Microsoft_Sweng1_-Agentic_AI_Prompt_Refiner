@@ -306,6 +306,7 @@ async def optimize(request: RefactorRequest) -> RefactorResponse:
     return RefactorResponse(
         evaluation=result.evaluation,
         refinement=result.refinement,
+        judge_diagnostics=result.diagnostics,
         normalized_blueprint=blueprint if request.include_normalized_payload else None,
         normalized_traces_count=len(traces),
         normalization_notes=notes,
@@ -401,6 +402,7 @@ async def optimize_run(request: RefactorRunRequest) -> RefactorRunResponse:
     return RefactorRunResponse(
         evaluation=result.evaluation,
         refinement=result.refinement,
+        judge_diagnostics=result.diagnostics,
         normalized_blueprint=current_blueprint if request.include_normalized_payload else None,
         generated_traces=last_generated_traces if request.include_generated_traces else [],
         traces_used_count=last_traces_for_judge_count,

@@ -130,9 +130,9 @@ class RefinementChange(BaseModel):
     """
     model_config = ConfigDict(extra="forbid")
 
-    issue_reference: str = Field(..., description="Reference to the issue identified by the judge")
-    change_description: str = Field(..., description="Description of what was changed in the blueprint")
-    reasoning: str = Field(..., description="Explanation of why this change was necessary")
+    issue_reference: str = Field("unknown issue", description="Reference to the issue identified by the judge")
+    change_description: str = Field("", description="Description of what was changed in the blueprint")
+    reasoning: str = Field("", description="Explanation of why this change was necessary")
 
 class RefinementResult(BaseModel):
     """
@@ -142,12 +142,12 @@ class RefinementResult(BaseModel):
     """
     model_config = ConfigDict(extra="forbid")
 
-    refined_prompt: str = Field(..., description="Final improved version of the system prompt or blueprint")
+    refined_prompt: str = Field("", description="Final improved version of the system prompt or blueprint")
     changes: List[RefinementChange] = Field(
-        ..., description="List of modifications applied to the original blueprint"
+        default_factory=list, description="List of modifications applied to the original blueprint"
     )
-    expected_impact: str = Field(..., description="How the refinement improves performance")
-    summary: str = Field(..., description="High-level summary of refinement rationale")
+    expected_impact: str = Field("", description="How the refinement improves performance")
+    summary: str = Field("", description="High-level summary of refinement rationale")
 
 
 class AgentBlueprint(BaseModel):
@@ -206,18 +206,18 @@ class RefactorRequest(BaseModel):
 
 class TestCaseResult(BaseModel):
     """ Result for a single test case evaluation """
-    test_case_description: str = Field(..., description="Description of the scenario being tested")
-    score: float = Field(..., ge=0.0, le=1.0, description="Score between 0.0 and 1.0")
-    passed: bool = Field(..., description="True if the agent passed the test criteria")
-    reasoning: str = Field(..., description="Explanation of why this score was given")
+    test_case_description: str = Field("unknown test case", description="Description of the scenario being tested")
+    score: float = Field(0.0, ge=0.0, le=1.0, description="Score between 0.0 and 1.0")
+    passed: bool = Field(False, description="True if the agent passed the test criteria")
+    reasoning: str = Field("", description="Explanation of why this score was given")
     issues: List[str] = Field(default_factory=list, description="List of specific failures or bugs found")
 
 
 class EvaluationResult(BaseModel):
     """ Overall evaluation result returned by the Judge """
-    overall_score: float = Field(..., ge=0.0, le=1.0, description="Aggregate score across all test cases")
-    test_results: List[TestCaseResult] = Field(..., description="Detailed results for each test case")
-    summary: str = Field(..., description="High-level diagnosis of the agent's performance")
+    overall_score: float = Field(0.0, ge=0.0, le=1.0, description="Aggregate score across all test cases")
+    test_results: List[TestCaseResult] = Field(default_factory=list, description="Detailed results for each test case")
+    summary: str = Field("", description="High-level diagnosis of the agent's performance")
 
 
 class EvaluationResponse(BaseModel):
@@ -225,11 +225,13 @@ class EvaluationResponse(BaseModel):
         and optionally the refiner output when overall_score < 0.7. """
     evaluation: EvaluationResult = Field(..., description="Judge evaluation result")
     refinement: RefinementResult | None = Field(None, description="Refiner output (present when overall_score < 0.7)")
+    diagnostics: List[str] = Field(default_factory=list, description="Judge parsing/repair diagnostics")
 
 
 class RefactorResponse(BaseModel):
     evaluation: EvaluationResult = Field(..., description="Judge evaluation result")
     refinement: RefinementResult | None = Field(None, description="Refiner output if score is below threshold")
+    judge_diagnostics: List[str] = Field(default_factory=list, description="Judge parsing/repair diagnostics")
     normalized_blueprint: AgentBlueprint | None = Field(
         None,
         description="Server-normalized blueprint used for evaluation."
@@ -257,6 +259,7 @@ class RefactorRunRequest(RefactorRequest):
 class RefactorRunResponse(BaseModel):
     evaluation: EvaluationResult = Field(..., description="Judge evaluation result")
     refinement: RefinementResult | None = Field(None, description="Refiner output if score is below threshold")
+    judge_diagnostics: List[str] = Field(default_factory=list, description="Judge parsing/repair diagnostics")
     normalized_blueprint: AgentBlueprint | None = Field(
         None,
         description="Normalized blueprint before runtime execution."

@@ -413,6 +413,11 @@ def _extract_structured_candidate(text: str, nested_keys: list[str]) -> dict[str
     return raw_payload
 
 
+def _add_diagnostic(diagnostics: list[str] | None, message: str) -> None:
+    if diagnostics is not None:
+        diagnostics.append(message)
+
+
 async def _repair_structured_output(
     chat_client: AzureOpenAIChatClient,
     *,
@@ -420,6 +425,7 @@ async def _repair_structured_output(
     model_cls: type[BaseModel],
     raw_text: str,
     failure_reason: str,
+    diagnostics: list[str] | None = None,
 ) -> BaseModel | None:
     repair_agent = ChatAgent(
         chat_client=chat_client,
@@ -443,23 +449,22 @@ Return only the corrected JSON object.
     try:
         response = await repair_agent.run(
             repair_prompt,
-            options={"response_format": model_cls, "temperature": 0.0},
+            options={"temperature": 0.0},
         )
     except Exception:
+        _add_diagnostic(diagnostics, f"{label}: repair agent failed to run; using fallback parser.")
         return None
 
     try:
-        repaired_value = response.value
-        if repaired_value is not None:
-            return repaired_value
+        if response.text.strip():
+            extracted = _extract_json(response.text)
+            if isinstance(extracted, dict):
+                _add_diagnostic(diagnostics, f"{label}: repair agent returned usable JSON.")
+                return model_cls.model_validate(extracted)
     except Exception:
         pass
 
-    try:
-        if response.text.strip():
-            return model_cls.model_validate_json(response.text)
-    except Exception:
-        pass
+    _add_diagnostic(diagnostics, f"{label}: repair agent output was still not usable; using fallback parser.")
 
     return None
 
@@ -467,64 +472,84 @@ Return only the corrected JSON object.
 async def _parse_or_repair_evaluation_result(
     chat_client: AzureOpenAIChatClient,
     text: str,
+    diagnostics: list[str] | None = None,
 ) -> EvaluationResult:
     candidate = _extract_structured_candidate(text, ["evaluation", "result"])
     if candidate is not None:
         try:
-            return EvaluationResult.model_validate(candidate)
+            evaluation = EvaluationResult.model_validate(candidate)
+            _add_diagnostic(diagnostics, "judge: parsed a valid EvaluationResult directly.")
+            return evaluation
         except Exception as exc:
+            _add_diagnostic(diagnostics, f"judge: direct validation failed ({exc}); attempting repair.")
             repaired = await _repair_structured_output(
                 chat_client,
                 label="judge",
                 model_cls=EvaluationResult,
                 raw_text=text,
                 failure_reason=str(exc),
+                diagnostics=diagnostics,
             )
             if isinstance(repaired, EvaluationResult):
+                _add_diagnostic(diagnostics, "judge: repair produced a valid EvaluationResult.")
                 return repaired
     else:
+        _add_diagnostic(diagnostics, "judge: no structured JSON object found; attempting repair.")
         repaired = await _repair_structured_output(
             chat_client,
             label="judge",
             model_cls=EvaluationResult,
             raw_text=text,
             failure_reason="Judge output was not a valid JSON object.",
+            diagnostics=diagnostics,
         )
         if isinstance(repaired, EvaluationResult):
+            _add_diagnostic(diagnostics, "judge: repair produced a valid EvaluationResult.")
             return repaired
 
+    _add_diagnostic(diagnostics, "judge: falling back to permissive parser/defaults.")
     return _parse_evaluation_result(text)
 
 
 async def _parse_or_repair_refinement_result(
     chat_client: AzureOpenAIChatClient,
     text: str,
+    diagnostics: list[str] | None = None,
 ) -> RefinementResult:
     candidate = _extract_structured_candidate(text, ["refinement", "result"])
     if candidate is not None:
         try:
-            return RefinementResult.model_validate(candidate)
+            refinement = RefinementResult.model_validate(candidate)
+            _add_diagnostic(diagnostics, "refiner: parsed a valid RefinementResult directly.")
+            return refinement
         except Exception as exc:
+            _add_diagnostic(diagnostics, f"refiner: direct validation failed ({exc}); attempting repair.")
             repaired = await _repair_structured_output(
                 chat_client,
                 label="refiner",
                 model_cls=RefinementResult,
                 raw_text=text,
                 failure_reason=str(exc),
+                diagnostics=diagnostics,
             )
             if isinstance(repaired, RefinementResult):
+                _add_diagnostic(diagnostics, "refiner: repair produced a valid RefinementResult.")
                 return repaired
     else:
+        _add_diagnostic(diagnostics, "refiner: no structured JSON object found; attempting repair.")
         repaired = await _repair_structured_output(
             chat_client,
             label="refiner",
             model_cls=RefinementResult,
             raw_text=text,
             failure_reason="Refiner output was not a valid JSON object.",
+            diagnostics=diagnostics,
         )
         if isinstance(repaired, RefinementResult):
+            _add_diagnostic(diagnostics, "refiner: repair produced a valid RefinementResult.")
             return repaired
 
+    _add_diagnostic(diagnostics, "refiner: falling back to permissive parser/defaults.")
     return _parse_refinement_result(text)
 
 
@@ -548,50 +573,61 @@ async def run_evaluation_stream(
     _current_agent: str | None = None
     _last_judge_text: str = ""
     _last_refiner_text: str = ""
+    workflow_error: Exception | None = None
+    diagnostics: list[str] = []
 
-    async for event in workflow.run_stream(message):
-        if isinstance(event, ExecutorInvokedEvent):
-            _current_agent = event.executor_id
-            if _current_agent:
-                _buffers[_current_agent] = []
-                yield f"data: {json.dumps({'type': 'agent_start', 'agent_name': agent_name, 'executor': _current_agent})}\n\n"
+    try:
+        async for event in workflow.run_stream(message):
+            if isinstance(event, ExecutorInvokedEvent):
+                _current_agent = event.executor_id
+                if _current_agent:
+                    _buffers[_current_agent] = []
+                    yield f"data: {json.dumps({'type': 'agent_start', 'agent_name': agent_name, 'executor': _current_agent})}\n\n"
 
-        elif isinstance(event, AgentRunUpdateEvent):
-            executor_id = event.executor_id or _current_agent
-            data = event.data
-            if isinstance(data, AgentResponseUpdate):
-                text = getattr(data, "text", "") or ""
-                if text and executor_id:
-                    _buffers.setdefault(executor_id, []).append(text)
-                    yield f"data: {json.dumps({'type': 'chunk', 'agent_name': agent_name, 'executor': executor_id, 'text': text})}\n\n"
+            elif isinstance(event, AgentRunUpdateEvent):
+                executor_id = event.executor_id or _current_agent
+                data = event.data
+                if isinstance(data, AgentResponseUpdate):
+                    text = getattr(data, "text", "") or ""
+                    if text and executor_id:
+                        _buffers.setdefault(executor_id, []).append(text)
+                        yield f"data: {json.dumps({'type': 'chunk', 'agent_name': agent_name, 'executor': executor_id, 'text': text})}\n\n"
 
-        elif isinstance(event, ExecutorCompletedEvent):
-            executor_id = event.executor_id
-            if executor_id and executor_id in _buffers:
-                text = "".join(_buffers.pop(executor_id))
-                if text.strip():
-                    if executor_id == "judge_agent":
-                        _last_judge_text = text
-                    elif executor_id == "refiner_agent":
-                        _last_refiner_text = text
+            elif isinstance(event, ExecutorCompletedEvent):
+                executor_id = event.executor_id
+                if executor_id and executor_id in _buffers:
+                    text = "".join(_buffers.pop(executor_id))
+                    if text.strip():
+                        if executor_id == "judge_agent":
+                            _last_judge_text = text
+                        elif executor_id == "refiner_agent":
+                            _last_refiner_text = text
+    except Exception as exc:
+        workflow_error = exc
 
     if not _last_judge_text:
+        _add_diagnostic(diagnostics, "judge: workflow finished without any output; using fallback evaluation.")
         evaluation = EvaluationResult(
             overall_score=0.0,
             test_results=[],
-            summary=f"Judge agent produced no output for {agent_name}; generated fallback evaluation.",
+            summary=(
+                f"Judge agent produced no usable output for {agent_name}; generated fallback evaluation."
+                if workflow_error is None
+                else f"Judge agent workflow failed for {agent_name}: {workflow_error}; generated fallback evaluation."
+            ),
         )
     else:
-        evaluation = await _parse_or_repair_evaluation_result(chat_client, _last_judge_text)
+        evaluation = await _parse_or_repair_evaluation_result(chat_client, _last_judge_text, diagnostics=diagnostics)
     refinement: RefinementResult | None = None
     if _last_refiner_text:
-            refinement = await _parse_or_repair_refinement_result(chat_client, _last_refiner_text)
+        refinement = await _parse_or_repair_refinement_result(chat_client, _last_refiner_text, diagnostics=diagnostics)
 
     result_data = {
         "type": "result",
         "agent_name": agent_name,
         "evaluation": evaluation.model_dump(mode="json"),
         "refinement": refinement.model_dump(mode="json") if refinement else None,
+        "diagnostics": diagnostics,
     }
     yield f"data: {json.dumps(result_data)}\n\n"
 
@@ -612,42 +648,52 @@ async def run_evaluation(blueprint: AgentBlueprint, traces: list[TraceLog]) -> E
     _current_agent: str | None = None
     _last_judge_text: str = ""
     _last_refiner_text: str = ""
+    workflow_error: Exception | None = None
+    diagnostics: list[str] = []
 
-    async for event in workflow.run_stream(message):
-        if isinstance(event, ExecutorInvokedEvent):
-            _current_agent = event.executor_id
-            if _current_agent:
-                _buffers[_current_agent] = []
+    try:
+        async for event in workflow.run_stream(message):
+            if isinstance(event, ExecutorInvokedEvent):
+                _current_agent = event.executor_id
+                if _current_agent:
+                    _buffers[_current_agent] = []
 
-        elif isinstance(event, AgentRunUpdateEvent):
-            executor_id = event.executor_id or _current_agent
-            data = event.data
-            if isinstance(data, AgentResponseUpdate):
-                text = getattr(data, "text", "") or ""
-                if text and executor_id:
-                    _buffers.setdefault(executor_id, []).append(text)
+            elif isinstance(event, AgentRunUpdateEvent):
+                executor_id = event.executor_id or _current_agent
+                data = event.data
+                if isinstance(data, AgentResponseUpdate):
+                    text = getattr(data, "text", "") or ""
+                    if text and executor_id:
+                        _buffers.setdefault(executor_id, []).append(text)
 
-        elif isinstance(event, ExecutorCompletedEvent):
-            executor_id = event.executor_id
-            if executor_id and executor_id in _buffers:
-                text = "".join(_buffers.pop(executor_id))
-                if text.strip():
-                    if executor_id == "judge_agent":
-                        _last_judge_text = text
-                    elif executor_id == "refiner_agent":
-                        _last_refiner_text = text
+            elif isinstance(event, ExecutorCompletedEvent):
+                executor_id = event.executor_id
+                if executor_id and executor_id in _buffers:
+                    text = "".join(_buffers.pop(executor_id))
+                    if text.strip():
+                        if executor_id == "judge_agent":
+                            _last_judge_text = text
+                        elif executor_id == "refiner_agent":
+                            _last_refiner_text = text
+    except Exception as exc:
+        workflow_error = exc
 
     if not _last_judge_text:
+        _add_diagnostic(diagnostics, "judge: workflow finished without any output; using fallback evaluation.")
         evaluation = EvaluationResult(
             overall_score=0.0,
             test_results=[],
-            summary="Workflow completed without any output from judge_agent; generated fallback evaluation.",
+            summary=(
+                "Workflow completed without any usable output from judge_agent; generated fallback evaluation."
+                if workflow_error is None
+                else f"Workflow failed for judge_agent: {workflow_error}; generated fallback evaluation."
+            ),
         )
     else:
-        evaluation = await _parse_or_repair_evaluation_result(chat_client, _last_judge_text)
+        evaluation = await _parse_or_repair_evaluation_result(chat_client, _last_judge_text, diagnostics=diagnostics)
 
     refinement: RefinementResult | None = None
     if _last_refiner_text:
-            refinement = await _parse_or_repair_refinement_result(chat_client, _last_refiner_text)
+        refinement = await _parse_or_repair_refinement_result(chat_client, _last_refiner_text, diagnostics=diagnostics)
 
-    return EvaluationResponse(evaluation=evaluation, refinement=refinement)
+    return EvaluationResponse(evaluation=evaluation, refinement=refinement, diagnostics=diagnostics)
