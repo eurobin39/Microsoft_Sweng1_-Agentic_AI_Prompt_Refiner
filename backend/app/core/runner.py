@@ -449,7 +449,6 @@ Return only the corrected JSON object.
     try:
         response = await repair_agent.run(
             repair_prompt,
-            options={"temperature": 0.0},
         )
     except Exception:
         _add_diagnostic(diagnostics, f"{label}: repair agent failed to run; using fallback parser.")

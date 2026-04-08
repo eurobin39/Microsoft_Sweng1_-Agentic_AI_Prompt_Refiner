@@ -349,9 +349,6 @@ def create_judge_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
         name="judge_agent",
         instructions=JUDGE_SYSTEM_PROMPT,
         chat_client=chat_client,
-        default_options={
-            "temperature": 0.0,
-        },
         tools=[
             store_evaluation_result,
             extract_agent_prompts,
@@ -368,9 +365,6 @@ def create_refiner_agent(chat_client: AzureOpenAIChatClient) -> ChatAgent:
         name="refiner_agent",
         instructions=REFINER_SYSTEM_PROMPT,
         chat_client=chat_client,
-        default_options={
-            "temperature": 0.0,
-        },
         tools=[
             store_refinement_result,
             diff_prompts,
