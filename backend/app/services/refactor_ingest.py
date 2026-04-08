@@ -181,7 +181,11 @@ def _build_fallback_trace(payload: Dict[str, Any], blueprint: AgentBlueprint) ->
     return TraceLog.model_validate(fallback)
 
 
-async def normalize_refactor_payload(payload: Dict[str, Any]) -> Tuple[AgentBlueprint, List[TraceLog], List[str]]:
+async def normalize_refactor_payload(
+    payload: Dict[str, Any],
+    *,
+    allow_github_url: bool = True,
+) -> Tuple[AgentBlueprint, List[TraceLog], List[str]]:
     notes: List[str] = []
     normalized_payload = dict(payload)
     raw_payload = payload.get("raw_payload")
@@ -190,6 +194,10 @@ async def normalize_refactor_payload(payload: Dict[str, Any]) -> Tuple[AgentBlue
         if merged:
             normalized_payload = {**merged, **normalized_payload}
             notes.append("Applied raw_payload JSON merge before normalization.")
+
+    if not allow_github_url and normalized_payload.get("github_url"):
+        notes.append("Ignored github_url for this endpoint; using repo_files or flexible payload fields instead.")
+        normalized_payload.pop("github_url", None)
 
     file_contents: Dict[str, str] = {}
     repo_files = _coerce_repo_files(normalized_payload.get("repo_files"))

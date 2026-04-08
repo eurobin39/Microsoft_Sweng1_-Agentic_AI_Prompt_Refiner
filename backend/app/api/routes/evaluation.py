@@ -331,7 +331,7 @@ async def optimize_run(request: RefactorRunRequest) -> RefactorRunResponse:
         normalize_notes,
     )
     try:
-        blueprint, normalized_traces, notes = await normalize_refactor_payload(payload)
+        blueprint, normalized_traces, notes = await normalize_refactor_payload(payload, allow_github_url=False)
         notes = normalize_notes + notes
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid Optimize-run payload: {exc}") from exc
